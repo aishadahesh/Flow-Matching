@@ -1,0 +1,114 @@
+{
+  "config_revision": 5,
+  "plan": {
+    "datasets": ["dtd", "aircraft", "flowers102"],
+    "encoders_by_dataset": {
+      "dtd": ["resnet18", "dinov2_vits14"],
+      "aircraft": ["resnet18", "dinov2_vits14"],
+      "flowers102": ["resnet18", "dinov2_vits14"]
+    },
+    "prototype_branch": "all",
+    "prototype_branches": ["image", "zero_shot_clip"],
+    "shots": [5, 10, "full"],
+    "subset_seeds": [0, 1, 2],
+    "init_seeds": [0, 1, 2],
+    "rationale": "Comprehensive evaluation requested: all three datasets, both frozen visual encoders on every dataset, image-derived prototypes, and zero-shot CLIP."
+  },
+  "feature_cache": {
+    "schema_version": 2,
+    "batch_size": 64,
+    "num_workers": 0
+  },
+  "zero_shot_clip": {
+    "output_subdir": "zero_shot_clip",
+    "model_name": "RN50",
+    "pretrained": "openai",
+    "force_quick_gelu": true,
+    "cache_schema_version": 2,
+    "primary_variant": "prescribed",
+    "prompt_variants": {
+      "prescribed": {
+        "dtd": ["a photo of a {class_name} texture"],
+        "aircraft": ["a photo of a {class_name} aircraft"],
+        "flowers102": ["a photo of a {class_name} flower"]
+      },
+      "ensemble": {
+        "dtd": [
+          "a photo of a {class_name} texture",
+          "a close-up photo of a {class_name} texture",
+          "a cropped photo of a {class_name} surface",
+          "a detailed photo of a {class_name} pattern",
+          "a texture that is {class_name}"
+        ],
+        "aircraft": [
+          "a photo of a {class_name} aircraft",
+          "a photo of the {class_name}, a type of aircraft",
+          "a side-view photo of a {class_name} aircraft",
+          "a photo of a {class_name} airplane in flight",
+          "a close-up photo of a {class_name} airplane"
+        ],
+        "flowers102": [
+          "a photo of a {class_name} flower",
+          "a close-up photo of a {class_name} flower",
+          "a photo of a blooming {class_name}",
+          "a detailed photo of the petals of a {class_name} flower",
+          "a photo of a {class_name} in a garden"
+        ]
+      }
+    }
+  },
+  "linear_probe": {
+    "output_subdir": "linear_probe_enhanced",
+    "batch_size": 64,
+    "max_epochs": 200,
+    "early_stopping_patience": 25,
+    "lr_patience": 10,
+    "min_delta": 0.0001,
+    "checkpoint_interval": 10,
+    "resume_training": true,
+    "candidates": [
+      {
+        "name": "l2_adamw_3e-3",
+        "feature_transform": "l2",
+        "learning_rate": 0.003,
+        "weight_decay": 0.0001,
+        "label_smoothing": 0.0
+      },
+      {
+        "name": "l2_adamw_1e-3_wd1e-3",
+        "feature_transform": "l2",
+        "learning_rate": 0.001,
+        "weight_decay": 0.001,
+        "label_smoothing": 0.0
+      },
+      {
+        "name": "standardize_adamw_1e-3",
+        "feature_transform": "standardize",
+        "learning_rate": 0.001,
+        "weight_decay": 0.0001,
+        "label_smoothing": 0.0
+      },
+      {
+        "name": "l2_adamw_wd1e-2_ls05",
+        "feature_transform": "l2",
+        "learning_rate": 0.003,
+        "weight_decay": 0.01,
+        "label_smoothing": 0.05
+      },
+      {
+        "name": "standardize_wd1e-2_ls05",
+        "feature_transform": "standardize",
+        "learning_rate": 0.001,
+        "weight_decay": 0.01,
+        "label_smoothing": 0.05
+      },
+      {
+        "name": "standardize_wd1e-1_ls10",
+        "feature_transform": "standardize",
+        "learning_rate": 0.0003,
+        "weight_decay": 0.1,
+        "label_smoothing": 0.1
+      }
+    ]
+  }
+}

@@ -18,27 +18,27 @@ Stage 1 is therefore the experimental foundation, not a preliminary Flow Matchin
 Build a reliable and reproducible classification pipeline using **frozen pretrained encoders** and **cached features**. Implement:
 
 - the required **linear probe**; and
-- exactly one prototype-based branch:
-  - image-derived class prototypes, or
+- both prototype-based branches:
+  - image-derived class prototypes; and
   - zero-shot CLIP text prototypes.
 
 Only classifier/prototype logic operates on the cached representations. Encoder weights must never change. Stage 1 must make later claims about an FM layer credible: improvements or regressions should be attributable to the new layer rather than inconsistent data splits, preprocessing, feature extraction, or evaluation.
 
-## 3. Decisions the group must make
+## 3. Comprehensive experiment decisions
 
-The specification deliberately does not choose the following:
+This implementation deliberately evaluates every choice exposed by the specification:
 
-1. **Two datasets** from DTD, FGVC-Aircraft, and Oxford Flowers-102.
-2. **One of those datasets** on which to run DINOv2 ViT-S/14 in addition to ResNet-18.
-3. **One prototype branch:** image-derived prototypes or zero-shot CLIP.
+1. all three datasets: DTD, FGVC-Aircraft, and Oxford Flowers-102;
+2. both ResNet-18 and DINOv2 ViT-S/14 on every dataset; and
+3. both image-derived prototypes and zero-shot CLIP.
 
-These are decision gates, not implementation details. They should be fixed before running the experiment grid and recorded with a short rationale. The prototype choice determines the baseline carried into Stage 2; the linear-probe setting is carried into Stage 3.
+This is a superset of the minimum required grid. Image-derived prototypes remain the natural Stage 2 handoff, while the linear-probe settings remain the Stage 3 references.
 
 ## 4. Experimental protocol
 
 ### 4.1 Datasets and official splits
 
-Choose two datasets:
+Evaluate all three datasets:
 
 | Dataset | Classes | Approximate images | Special rule |
 |---|---:|---:|---|
@@ -46,7 +46,7 @@ Choose two datasets:
 | FGVC-Aircraft | 100 | 10,000 | Use the `variant` annotation level |
 | Oxford Flowers-102 | 102 | 8,000 | Use official splits |
 
-For both selected datasets:
+For every dataset:
 
 - use all classes;
 - preserve the official training, validation, and test splits;
@@ -64,8 +64,8 @@ Use the preprocessing associated with each public pretrained checkpoint.
 
 | Encoder | Where used | Required representation |
 |---|---|---|
-| ImageNet-1K pretrained ResNet-18 | Both selected datasets | 512-dimensional feature before the final classification layer |
-| DINOv2 ViT-S/14 | One selected dataset | Final class-token representation |
+| ImageNet-1K pretrained ResNet-18 | All three datasets | 512-dimensional feature before the final classification layer |
+| DINOv2 ViT-S/14 | All three datasets | Final class-token representation |
 | CLIP RN50 | Only for zero-shot CLIP | Frozen image and text embeddings |
 
 All encoder parameters remain frozen. Extract and cache training, validation, and test features before classifier training. Caching is a scientific-control measure as well as an efficiency measure: every downstream baseline for a dataset-encoder pair should see exactly the same representation of each example.
@@ -95,7 +95,7 @@ The suggested starting configuration is:
 
 An extensive hyperparameter search is not required. The target is a stable, reasonable baseline. If this configuration behaves poorly, changes may be selected from validation results and must be reported. Test results must not guide those changes.
 
-Run the linear probe with ResNet-18 on both datasets and with DINOv2 ViT-S/14 on the chosen dataset. For every dataset-encoder combination:
+Run the linear probe with both ResNet-18 and DINOv2 ViT-S/14 on all three datasets. For every dataset-encoder combination:
 
 - 5-shot: three runs corresponding to subset seeds 0, 1, and 2;
 - 10-shot: three runs corresponding to subset seeds 0, 1, and 2; and
@@ -103,7 +103,9 @@ Run the linear probe with ResNet-18 on both datasets and with DINOv2 ViT-S/14 on
 
 Save per-epoch metrics. For one representative 10-shot run per dataset-encoder combination, report training and validation loss curves.
 
-## 6. Choose one prototype branch
+## 6. Prototype branches
+
+Run both branches below. This exceeds the minimum requirement but provides complete coverage of the available choices.
 
 ### 6.1 Option A: image-derived class prototypes
 
@@ -137,7 +139,9 @@ Normalize image and text embeddings and classify by maximum cosine similarity:
 y_hat = argmax_c cos(z, t_c)
 ```
 
-This branch uses no labeled training images, so it produces one result per selected dataset rather than separate 5-shot, 10-shot, and full trained models. Its accuracy can be displayed as a horizontal reference in the training-size plot. Class-name normalization used in prompts must be deterministic and documented.
+This branch uses no labeled training images, so it produces one result per dataset rather than separate 5-shot, 10-shot, and full trained models. Its accuracy can be displayed as a horizontal reference in the training-size plot. Class-name normalization used in prompts must be deterministic and documented.
+
+The implementation also reports a supplementary prompt-ensemble variant. It averages five individually normalized, dataset-specific text embeddings per class and then normalizes the resulting class prototype. This does not replace the prescribed single-prompt Stage 1 baseline and is never selected using test labels. OpenAI RN50 weights are loaded with QuickGELU, matching the pretrained checkpoint, and the cache path is versioned so incompatible embeddings cannot be reused.
 
 ## 7. Evaluation and required outputs
 
@@ -155,7 +159,7 @@ Stage 1 must produce:
 1. **Accuracy table** covering every implemented dataset, encoder, training-set size, and baseline.
 2. **Accuracy versus training-set size plot** for 5-shot, 10-shot, and full, with error bars where repeated runs exist. Zero-shot CLIP may appear as a horizontal reference.
 3. **Training and validation loss curves** for one representative 10-shot linear-probe run per dataset-encoder combination. The discussion should address stability and overfitting.
-4. **One row-normalized confusion matrix per selected dataset** for a representative setting chosen to expose meaningful errors.
+4. **One row-normalized confusion matrix per dataset** for a representative setting chosen to expose meaningful errors.
 5. **Feature visualizations** for a readable subset of about 8-10 classes using PCA, t-SNE, or another justified 2D projection.
 
 For comparable feature plots on a dataset, hold the selected classes, test examples, and colors fixed. Plot test features with image-derived prototypes for ResNet-18/DINOv2 or with text prototypes for CLIP. When prototypes are shown, fit the projection jointly to all displayed image features and prototypes. These plots are qualitative views of geometry; they are not substitutes for classification metrics.
@@ -253,9 +257,9 @@ The project presentation's Stage 2 comparison of **standard FM training versus r
 
 Stage 1 is done when:
 
-- the two datasets, DINOv2 dataset, and prototype branch are fixed and documented;
+- all three datasets, both visual encoders, and both prototype branches are documented;
 - all encoders are demonstrably frozen and all downstream work uses validated cached features;
-- the required linear-probe grid and selected prototype baseline follow the exact split/seed protocol;
+- the complete linear-probe grid and both prototype baselines follow the exact split/seed protocol;
 - final top-1 accuracies are aggregated correctly;
 - the accuracy table, training-size plot, training curves, confusion matrices, and feature visualizations are complete;
 - a representative run can be reproduced from recorded configuration and cached artifacts; and
