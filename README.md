@@ -26,9 +26,6 @@ Run the notebooks in this order:
 3. `03_zero_shot_clip.ipynb` — evaluates zero-shot CLIP RN50 on all three
    datasets with checkpoint-compatible QuickGELU, the prescribed prompts, and
    a separately reported five-template prompt ensemble.
-4. `04_combined_results.ipynb` — combines every completed baseline into the
-   final accuracy table and comparison plots.
-
 Old unversioned feature caches and old checkpoint directories are not reused by
 the enhanced pipeline. Few-shot repetitions vary only the subset seed; full-data
 repetitions vary only the classifier-initialization seed.
