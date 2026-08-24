@@ -198,7 +198,9 @@ class Data:
         self.zeroshot = nb_table(NB5, 'stage1_reported')
         self.reverse5 = nb_table(NB5, 'reverse_flow_recovery.csv')
         # 05 sections 19 and 20 are new; they stay None until the notebook is re-run
-        self.paired5 = nb_table_optional(NB5, 'paired_delta_vs_control_summary.csv')
+        # needle is a function definition, not the CSV name: section 19b writes a similarly
+        # named file and the resolver matches by substring
+        self.paired5 = nb_table_optional(NB5, 'def control_run(')
         self.tstar5 = nb_table_optional(NB5, 'validation_selected_tstar_summary.csv')
         self.flowtime5 = nb_table(NB5, 'intermediate_flow_time_metrics.csv')
 
