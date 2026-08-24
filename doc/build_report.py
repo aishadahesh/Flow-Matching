@@ -141,6 +141,18 @@ def _is_num(v):
         return False
 
 
+def nb_table_optional(nbfile, cell, want=None):
+    """Like nb_table, but None when the section exists yet has never been executed.
+
+    Sections added to a notebook carry no output until it is re-run in Colab. Pages that
+    consume them must degrade rather than abort the whole build.
+    """
+    try:
+        return nb_table(nbfile, cell, want)
+    except (LookupError, KeyError, IndexError):
+        return None
+
+
 def nb_image(nbfile, cell, which=0):
     cell = cell_index(nbfile, cell)
     pngs = [o for o in _cells(nbfile)[cell].get('outputs', []) if 'image/png' in o.get('data', {})]
@@ -185,6 +197,9 @@ class Data:
         self.cmp5 = nb_table(NB5, 'accuracy_summary_with_baselines.csv')
         self.zeroshot = nb_table(NB5, 'stage1_reported')
         self.reverse5 = nb_table(NB5, 'reverse_flow_recovery.csv')
+        # 05 sections 19 and 20 are new; they stay None until the notebook is re-run
+        self.paired5 = nb_table_optional(NB5, 'paired_delta_vs_control_summary.csv')
+        self.tstar5 = nb_table_optional(NB5, 'validation_selected_tstar_summary.csv')
         self.flowtime5 = nb_table(NB5, 'intermediate_flow_time_metrics.csv')
 
     # -- derived counts, computed rather than asserted -------------------------------
