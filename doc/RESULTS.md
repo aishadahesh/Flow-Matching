@@ -58,10 +58,10 @@ Best of the four FM variants (standard/rolled-out × T ∈ {4,12}), with ΔAcc a
 
 | Dataset | Encoder | K=5 | K=10 | full |
 |---|---|---|---|---|
-| DTD | ResNet-18 | .4723 (+.0072) | .5417 (+.0080) | .5926 (+.0048) |
+| DTD | ResNet-18 | .4723 (+.0073) | .5417 (+.0080) | .5926 (+.0048) |
 | DTD | DINOv2 | .6480 (+.0054) | .7083 (+.0145) | .7592 (+.0326) |
 | Aircraft | ResNet-18 | .1886 (+.0282) | .2431 (+.0446) | .3180 (+.0660) |
-| Aircraft | DINOv2 | .3430 (+.1104) | .4351 (+.1570) | **.5852 (+.2429)** |
+| Aircraft | DINOv2 | .3430 (+.1104) | .4351 (+.1570) | **.5852 (+.2428)** |
 | Flowers-102 | ResNet-18 | .7170 (+.0151) | .7852 (+.0330) | .7859 (+.0337) |
 | Flowers-102 | DINOv2 | .9917 (+.0013) | .9941 (+.0002) | .9944 (+.0004) |
 
@@ -82,7 +82,7 @@ Best of the four FM variants (standard/rolled-out × T ∈ {4,12}), with ΔAcc a
 | Flowers-102 / ResNet-18 | .7522 | .7859 | **.8252** |
 | Flowers-102 / DINOv2 | .9940 | **.9944** | .9937 |
 
-FM recovers roughly 20–75% of the gap and overtakes the probe only on saturated Flowers/DINOv2, where the difference is inside seed noise. Honest framing: the FM layer is a real improvement over the prototype rule it replaces, not a replacement for a discriminatively trained classifier.
+Measured in `04` §20: where the probe actually leads the prototype baseline (14 of 18 settings), FM closes a **median 59% of that gap, range 10–87%**. In the other 4 settings the probe sits *below* the prototype baseline, so "gap closed" is not a meaningful fraction there. FM overtakes the probe in 4 of 18 settings — saturated Flowers-102 at all three K, plus DTD/ResNet-18 at K=5 — where the differences are inside seed noise. Honest framing: the FM layer is a real improvement over the prototype rule it replaces, not a replacement for a discriminatively trained classifier.
 
 **3. Standard FM beats rolled-out training in most settings.** Comparing the better `T` of each objective across the 18 (dataset, encoder, K) cells: standard wins 14, rolled-out wins 3 (Aircraft/DINOv2 at K=5 and K=10, plus Flowers-102/DINOv2 at K=10 by .0001), one tie (Flowers-102/DINOv2 at K=5). The largest single divergence is Aircraft/DINOv2 at `full`: standard .5852 vs rolled-out .5392, a .046 gap in standard's favour. Rolled-out training is also the only variant that ever loses to the baseline (DTD/ResNet-18 full, −.021), and it costs more — backprop through T sequential steps, roughly 1.5–2.5× standard FM per run, scaling with T.
 
@@ -173,7 +173,7 @@ Every intermediate Euler state classified over the complete test split. The `t=0
 
 Where the prototype baseline already ranked classes correctly (positive margin: DTD, Flowers), the flow pulls everything closer to every prototype — cosine to the true prototype rises, but the margin against the best competitor slightly *falls*, and accuracy barely moves. Where the baseline was mis-ranked (negative margin: Aircraft), the flow repairs the ranking — margin improves by +.045 on Aircraft/DINOv2 — and accuracy jumps +13.4 points. **The FM layer does not sharpen a working classifier; it repairs a broken one.**
 
-**Finding B — the flow overshoots its own optimum.** Accuracy peaks before `t=1` in 7 of 12 image-branch curves and in **all 6** CLIP-branch curves. Rolled-out models overshoot hardest:
+**Finding B — the flow overshoots its own optimum.** Accuracy strictly peaks before `t=1` in 6 of 12 image-branch curves and in **all 6** CLIP-branch curves. (The remaining 6 image-branch curves peak *at* `t=1`. Counting the argmax index instead of a strict improvement gives 8 of 12, because Flowers-102/DINOv2 is flat to four decimals and its argmax lands on `t=0` by tie-break — the strict count is the honest one.) Rolled-out models overshoot hardest:
 
 | Setting | best t | accuracy at best t | accuracy at t=1 | left on the table |
 |---|---|---|---|---|
@@ -205,6 +205,8 @@ Two opposite behaviours, and the contrast is the point.
 
 **On the CLIP branch the reverse flow does something striking.** The prototypes move a long way (cosine distance ≈ .70, close to orthogonal) and recovery *improves dramatically*: text prototypes that originally identified their own class's image cloud only 55% / 25% / 75% of the time land nearest their own class 100% / 75% / 100% of the time after backward integration. **That is direct quantitative evidence of CLIP's image–text modality gap, and that the FM field learned to bridge it** — the forward recovery rate measures the gap, and the reverse pass closes it. The same story appears in the forward direction as cosine-to-prototype rising from ≈.23 to ≈.89.
 
+The re-run added the continuous companions to that discrete test, and they are more emphatic than the recovery rate: cosine from the text prototype to its own class's mean **image** embedding rises from .271 / .276 / .289 to **.960 / .974 / .986** (DTD / Aircraft / Flowers-102), and the L2 distance falls from ≈1.20 to .279 / .226 / .166. A recovery rate saturates at 1.000 and cannot distinguish "just barely closest" from "landed on top of it"; these say the reverse-flowed prompt lands essentially *on* its visual class centroid.
+
 Caveats unchanged: the backward pass uses a shifted time grid so it is not the exact inverse, and a contraction is not invertible in principle — this recovers a plausible pre-image, not the original point.
 
 ### Animations
@@ -213,19 +215,221 @@ Standard and rolled-out side by side from an identical starting feature, with th
 
 ## Summary
 
+Points 1–10 are the headline results; the section after this one is the evidence that qualifies points 2 and 3, and it should be read with them rather than after them.
+
 1. **Encoder choice dominates.** DINOv2 ViT-S/14 over ResNet-18 is worth +14 to +31 points — larger than any method difference measured here.
-2. **The FM layer works, consistently.** It improves on the prototype baseline in 66 of 72 cells (3 flat, 3 regressions), and the improvement grows with K, up to +.24 on Aircraft/DINOv2 at full data.
-3. **It does not beat a linear probe.** FM closes 20–75% of the prototype-to-probe gap and overtakes the probe only where accuracy is already saturated. This is the central honest result for Stage 2.
-4. **Standard FM ≥ rolled-out training**, on accuracy (14 of 18 settings) and on compute. Rolled-out training is also the only variant that ever regresses below the baseline, and the one that overshoots hardest (point 8).
-5. **T is nearly irrelevant** for standard FM, for a structural reason: the ideal velocity is constant along the path, so the Euler endpoint is T-independent.
-6. **On the CLIP branch the fair control reverses the headline.** FM beats zero-shot in 32 of 36 cells but loses to a same-supervision control in 28 of 36. The large Δ vs zero-shot measures the labels, not the layer.
-7. **The FM layer repairs a broken classifier rather than sharpening a working one.** Measured at intermediate flow times: cosine to the true prototype rises everywhere, but the *margin* against the best competitor only rises where the baseline was already mis-ranked (Aircraft). Where the baseline ranked correctly (DTD, Flowers) the margin slightly falls and accuracy barely moves.
-8. **`t=1` is a convention, not an optimum.** Accuracy peaks before the endpoint in all 6 CLIP-branch curves and 7 of 12 image-branch curves — up to +4.2 points left on the table by rolled-out models on CLIP/Flowers. The stopping time deserves to be a validation-selected hyperparameter.
+2. **The FM layer works, but on fewer cells than the raw table suggests.** It improves on the prototype baseline in 66 of 72 cells (3 flat, 3 regressions), and the gain grows with K up to +.24 on Aircraft/DINOv2 at full data. Under the **paired** 95% CI (§14) only 39 of 72 are genuinely distinguishable from zero: all 24 Aircraft cells, but just 7 of 24 on DTD. The sub-1-point DTD gains are no measurable effect, and — symmetrically — neither are the two regressions.
+3. **It does not beat a linear probe, and most of the largest gain is not specific to flow matching.** FM closes a median 59% (range 10–87%) of the prototype-to-probe gap where the probe leads, and overtakes the probe in 4 of 18 settings, all near-saturated. The controls (§19) sharpen this: FM beats both a plain MLP and a time-free residual stack in 16 of 18 settings, but on the +24-point Aircraft/DINOv2 headline a plain `direct` MLP already delivers 97% of the gain. Flow matching's *specific* contribution is largest where the plain MLP overfits below the baseline — DTD and Flowers-102 on ResNet-18, +.042 to +.063.
+4. **Standard FM ≥ rolled-out training**, on accuracy (14 of 18 settings) and on compute. Rolled-out training is also the only variant that ever regresses below the baseline, the one that overshoots hardest (point 8), and the one that improves `W/B` least (§17).
+5. **T is nearly irrelevant** for standard FM, for a structural reason: the ideal velocity is constant along the path, so the Euler endpoint is T-independent. The step ablation (§18) puts a floor on that — two Euler steps deliver the full `T=12` gain (median 100%), one step delivers only ~62% and can be worse than not running the flow at all.
+6. **On the CLIP branch the fair control reverses the headline.** FM beats zero-shot in 32 of 36 cells but loses to a same-supervision control in 28 of 36. The large Δ vs zero-shot measures the labels, not the layer. (This branch has no paired CI yet — see Open items.)
+7. **The FM layer repairs a broken classifier rather than sharpening a working one.** Cosine to the true prototype rises everywhere, but the *margin* against the best competitor only rises where the baseline was already mis-ranked (Aircraft). §15 makes the mechanism concrete: in every setting, samples the layer fixes had negative pre-flow margin and samples it breaks had positive pre-flow margin. §17 adds the class-structure view — `W/B` falls in all 12 curves, so the flow really does discriminate rather than merely contract, but falling `W/B` converts into accuracy only where the true prototype was not already ranked first.
+8. **`t=1` is a convention, not an optimum.** Accuracy peaks before the endpoint in all 6 CLIP-branch curves and 6 of 12 image-branch curves — up to +4.2 points left on the table by rolled-out models on CLIP/Flowers. Selecting `t*` honestly on validation (§16) helps in 18 of 36 conditions, mean +0.0018, and converts the project's only real regression (DTD/ResNet-18 `full`, rolled-out) from −.021 into +.010.
 9. **The reverse flow makes CLIP's modality gap measurable.** Backward-integrating the text prototypes raises their recovery rate from .55/.25/.75 to 1.00/.75/1.00 — the forward rate measures the gap, the reverse pass closes it. On the image branch the same operation barely moves anything, which is what a contraction should do.
-10. **Two reporting caveats that must not be silently dropped**: Flowers-102 at K=10 has zero variance by construction (the train split is exactly 10/class), and the Stage 1 image-prototype `full` baseline is a single run, so it has no error bar.
+10. **Two reporting caveats that must not be silently dropped**: Flowers-102 at K=10 has zero variance by construction (the train split is exactly 10/class), which also makes 9 of the 48 "significant" cells in §14 degenerate; and the Stage 1 image-prototype `full` baseline is a single run, so it has no error bar and the full-data deltas are unpaired.
+
+## Hardening, ablations and controls — measured
+
+The analyses added after the external review (2026-08-23) have now been executed. `04_flow_matching.ipynb`
+ran Sections 5b and 14–21 and `05_flow_matching_clip.ipynb` ran Sections 17–19; every number below comes
+from that run. Two things about the run itself, reported rather than quietly absorbed:
+
+- **The stored accuracies did not shift.** Section 7 printed `Result rows: 216 | runs that actually
+  resumed from a checkpoint: 0`. No saved run had ever resumed, so the pre-fix nondeterministic
+  `t ~ U(0,1)` sampling never had the chance to affect a stored result, and the new deterministic
+  per-`(init_seed, epoch, batch)` sampling changes nothing retroactively. Every Model 2 number above is
+  the same before and after that fix — the transition caveat can be dropped rather than carried.
+- **The per-`T` selection columns are still empty.** `test_accuracy_sel_T` needs one pass with
+  `FORCE_RETRAIN_STANDARD = True`; the skip logic checks whether output files exist, so all 54
+  standard-FM runs were loaded from Drive and no `best_T{T}.pt` was written. This is the one review item
+  that remains genuinely outstanding.
+
+Section 5b's guards all passed: subset identity verified for **42** (dataset, encoder, K, seed)
+combinations at a maximum prototype-reconstruction drift of **0.00e+00** — the K-shot subsets are
+bit-identical to Stage 1's, not merely statistically equivalent — plus prototype row-order and unit-norm
+assertions on both transport endpoints.
+
+### The paired confidence intervals cut the headline claim down (§14)
+
+Section 8's "improves in 66 of 72 cells" is a difference of two independently-averaged means. Section 14
+redoes it as a paired per-seed difference — FM run *s* and baseline run *s* saw the same K images — with
+a 95% t-interval over the 3 repetitions. The two statements are very different:
+
+| | count of 72 cells |
+|---|---|
+| positive mean paired ΔAcc | 66 |
+| 95% CI excludes zero | 48 |
+| …of which are degenerate (`std = 0` by construction, all Flowers-102) | 9 |
+| **genuinely distinguishable from zero** | **39** |
+
+Broken down by dataset, this is not uniform at all:
+
+| Dataset | CI excludes zero |
+|---|---|
+| FGVC-Aircraft | **24 of 24** |
+| Flowers-102 | 17 of 24 (9 of them degenerate) |
+| DTD | **7 of 24** |
+
+**The sub-1-point DTD gains do not survive.** Of DTD's 24 cells only the four DINOv2 `full` cells (+.030
+to +.033), the two DINOv2 K=10 standard cells (+.0144, +.0145) and DTD/ResNet-18 `full` standard `T=12`
+(+.0048, CI [+.0025, +.0071]) clear zero. Everything else on DTD — including every DTD/ResNet-18 K=5 and
+K=10 cell — has a CI straddling zero and must be restated as **no measurable effect**, not as a small
+gain. The `n=3` interval is wide, which is honest rather than unfortunate.
+
+Symmetrically, **the two regressions are not significant either**: DTD/ResNet-18 `full` rolled-out is
+−.0213 (CI [−.0522, +.0096]) at `T=4` and −.0206 (CI [−.0499, +.0088]) at `T=12`. They are the largest
+regressions measured and they still cannot be distinguished from zero at `n=3`.
+
+McNemar, computed on the shared test images, is significant in all 3 seeds in 37 of 72 cells. Where it
+disagrees with the CI it does so in the anti-conservative direction, as expected — 6 cells are
+CI-negative but McNemar-significant in ≥2 seeds (both DTD/ResNet-18 `full` rolled-out regressions and
+four Flowers-102 K=5 cells). McNemar's unit is the test image, not the run, so it ignores subset variance
+entirely. **Where the two disagree, quote the CI.**
+
+### The controls: flow matching, or just another MLP? (§19)
+
+This is the experiment the accuracy table could not settle. Two non-FM controls, with identical hidden
+architecture, optimizer, schedule, early stopping, subsets and seeds: `direct`, a plain MLP trained on
+`‖g(z) − p_y‖²` with no time input and no integration; and `residual`, the same shared network applied
+the same `T = 12` times, trained only on the endpoint, with no time conditioning and no per-`t` velocity
+supervision.
+
+**FM beats both controls in 16 of 18 settings** (median advantage over `direct` +.0255, over `residual`
++.0053). So the gain is not merely "a supervised nonlinear map of the same size". But the breakdown
+qualifies the headline sharply:
+
+| Setting (`full`) | prototype | direct MLP | residual | best FM | direct's share of FM's gain |
+|---|---|---|---|---|---|
+| Aircraft / DINOv2 | .3423 | .5783 | .5432 | .5852 | **97%** |
+| Aircraft / ResNet-18 | .2520 | .2588 | .3089 | .3180 | 10% |
+| DTD / DINOv2 | .7266 | .7551 | .7537 | .7592 | 88% |
+| DTD / ResNet-18 | .5878 | .5617 | .5631 | .5926 | *below baseline* |
+| Flowers-102 / ResNet-18 | .7522 | .7287 | .7760 | .7859 | *below baseline* |
+| Flowers-102 / DINOv2 | .9940 | .9940 | .9941 | .9944 | 0% |
+
+**The +24.3-point Aircraft/DINOv2 headline is almost entirely "a supervised MLP into prototype space",
+not flow matching specifically.** The plain `direct` control reaches .5783 against FM's .5852 — 97% of
+the gain over the .3423 baseline, with FM adding only +.0069 on top. The same holds at K=5 and K=10
+(93%, 96%). Summary point 2 has to be read with this: the layer works, but in the setting that produces
+the largest number, most of the work is done by adding a trained nonlinear head at all.
+
+The mirror image is just as informative. On DTD/ResNet-18, Flowers-102/ResNet-18, and DTD/DINOv2 at low
+`K`, the `direct` MLP lands *below* the closed-form prototype baseline — it overfits — while FM stays
+above it. FM's advantage over `direct` is largest exactly there (+.042 to +.063). And `residual` sits
+much closer to FM than `direct` does almost everywhere, which localizes the credit: **most of what FM has
+over a plain MLP comes from iterative shared-weight computation, and the time conditioning plus per-`t`
+velocity supervision adds a smaller increment on top** — with one clear exception, Aircraft/DINOv2 at
+`full`, where FM beats `residual` by +.0420.
+
+The two settings where FM does not beat both controls are Aircraft/DINOv2 at K=5 (`residual` .3442 vs FM
+.3430) and Flowers-102/DINOv2 at K=5 (`direct` .9922 vs FM .9917) — both inside seed noise.
+
+### Validation-selected stopping time (§16)
+
+Finding B above is now measured honestly: `t*` is the argmax of **validation** accuracy over the `T = 12`
+Euler grid, frozen, and only then evaluated once on test. Early stopping the flow helps in **18 of 36
+conditions, mean gain +0.0018, best +0.0303**. The `oracle_best` column — the best any `t` could have
+reached on test — is reported alongside as an unreachable bound; the gap to it is typically .001–.005, so
+honest selection costs little.
+
+The single most useful case is the notebook's only real regression:
+
+| Setting | `t*` | test at `t*` | test at `t=1` | prototype baseline |
+|---|---|---|---|---|
+| DTD / ResNet-18 / `full`, rolled-out | 0.56 | **.5975** | .5672 | .5878 |
+
+Validation-selected early stopping turns a −.021 regression into a +.010 gain over the baseline. That is
+the strongest argument in the project for treating the stopping time as a hyperparameter rather than a
+convention. Note the other half of the result though: it helps in only half the conditions and the mean
+gain is +0.0018, so it is a fix for the overshooting cases, not a free improvement everywhere.
+
+### Contraction or discrimination? (§17)
+
+Section 13's metrics all improve whenever the flow contracts toward the prototype set, whether or not the
+classes become easier to separate. Section 17 measures the class structure directly: within-class scatter
+`W(t)`, between-class separation `B(t)`, and the discriminative ratio `W/B`.
+
+**`W/B` falls in all 12 curves** (median change −0.219), so the flow is not merely dragging everything
+inward — it does tighten classes relative to their separation. The magnitude tracks the accuracy gain
+where the gain is large:
+
+| Setting (10-shot, standard FM) | `W/B`, `t=0` → `t=1` | accuracy gain |
+|---|---|---|
+| Aircraft / DINOv2 | 0.698 → **0.185** | +.1338 |
+| Aircraft / ResNet-18 | 2.510 → 1.794 | +.0495 |
+| Flowers-102 / ResNet-18 | 0.774 → 0.562 | +.0330 |
+| DTD / ResNet-18 | 1.605 → 1.290 | +.0090 |
+| DTD / DINOv2 | 1.045 → 0.739 | +.0090 |
+| Flowers-102 / DINOv2 | 0.236 → 0.228 | +.0000 |
+
+So `W/B` falling is **necessary but not sufficient**: DTD sees a large ratio improvement (−0.31) for under
+a point of accuracy. The reason is visible in the companion columns — on Aircraft, cosine to the *nearest
+competitor* stays above cosine to the true prototype (.949 vs .942 on ResNet-18, .892 vs .883 on DINOv2),
+which is exactly the negative margin of Finding A. Improving `W/B` reorganizes the cloud; whether that
+converts into accuracy depends on whether the true prototype was ranked first to begin with. Same
+"repairs a broken classifier" story, measured on class structure rather than per-sample margins.
+
+Rolled-out FM improves `W/B` much less than standard FM on DTD, Aircraft/ResNet-18 and
+Flowers-102/ResNet-18 (−0.086 vs −0.716 on Aircraft/ResNet-18, for instance) — consistent with
+endpoint-only supervision constraining the field more weakly.
+
+### Which samples the flow flips (§15)
+
+Top-1 accuracy nets out two opposite effects; Section 15 separates them at 10-shot, seed 0, `T=12`, and
+records each flipped sample's margin **before** the flow ran.
+
+| Setting | fixed | broken | net | margin of fixed | margin of broken |
+|---|---|---|---|---|---|
+| Aircraft / DINOv2 | 562 | 116 | **+446** (+13.4 pp) | −.0444 | +.0231 |
+| Aircraft / ResNet-18 | 285 | 120 | +165 (+4.95 pp) | −.0080 | +.0051 |
+| Flowers-102 / ResNet-18 | 381 | 178 | +203 (+3.30 pp) | −.0082 | +.0091 |
+| DTD / ResNet-18 | 85 | 68 | +17 (+0.90 pp) | −.0144 | +.0149 |
+| DTD / DINOv2 | 56 | 39 | +17 (+0.90 pp) | −.0258 | +.0248 |
+| Flowers-102 / DINOv2 | 1 | 1 | 0 (+0.00 pp) | −.0060 | +.0001 |
+
+The pattern is identical everywhere and it constrains how the layer may be described: **fixed samples had
+negative pre-flow margin and broken samples had positive pre-flow margin, in every single setting.** The
+layer moves samples near the decision boundary in both directions; it wins by fixing more than it breaks,
+not by leaving correct predictions alone. On Aircraft/DINOv2 the fixed group's mean margin is −.0444 —
+genuinely confidently misclassified, not marginal — which is what makes that gain a restructuring rather
+than a nudge. On DTD the two groups are near mirror images (−.0144 / +.0149, 85 fixed against 68 broken),
+which is the same conclusion §14's confidence intervals reach by a different route: on DTD the layer is
+churning, not improving.
+
+### How many Euler steps the gain needs (§18)
+
+Inference-only sweep over `T ∈ {1, 2, 4, 8, 12}`, standard FM only — a rolled-out network cannot
+legitimately be run at a `T` it was not trained for. The required table keeps `T ∈ {4, 12}`.
+
+**Two Euler steps already deliver the whole `T=12` gain**: median `frac_at_T2` = 1.00 across the 18
+settings, reaching at least the full gain in 11 of them and strictly exceeding it in 9, so `T=2`
+sometimes beats `T=12`. **One step does not**: median
+`frac_at_T1` = 0.62, and it is *negative* in three settings (DTD/ResNet-18 `full` −7.07, DTD/ResNet-18
+K=10 −0.80, Aircraft/ResNet-18 `full` −0.56), where a single large Euler step overshoots to somewhere
+worse than the untouched feature.
+
+This extends the T-independence result (finding 4) downward rather than contradicting it: the endpoint is
+`T`-independent for `T ≥ 2`, and `T = 1` is simply too coarse a discretization of the path. The practical
+reading is that the layer costs two velocity evaluations, not twelve.
+
+## Correction
+
+Earlier versions of both notebooks described the forward prototype's recovery rate in the reverse-flow
+section as "the control and the ceiling". That is wrong on the CLIP branch and the measured numbers in
+this file already contradict it: reverse recovery reaches 1.00/.75/1.00 against forward references of
+.55/.25/.75. A CLIP text prototype does not sit inside its own class's image cloud, so integrating
+backward through a field trained to carry images *to* text prototypes moves it toward that cloud and
+can beat where it started. The forward value is a **pre-transport reference**; it is additionally a
+ceiling only on the image branch, where the prototype already is the class image mean. Summary point 9
+was always stated correctly - it was the notebook prose that mislabelled it.
 
 ## Open items
 
-- Treat the flow stopping time as a validation-selected hyperparameter. Finding B shows `t=1` is not optimal in any CLIP-branch setting and in 7 of 12 image-branch curves; the gain is up to +4.2 points and costs nothing but a choice.
-- Bring `04_flow_matching.ipynb` in line with `05` on `best_val_accuracy`: the standard-FM rows still write the T-averaged selection score into both per-`T` result rows.
-- The optional intermediate-flow-time *comparison of samples against prototypes* is done; the remaining unexplored direction is whether early stopping interacts with the standard-vs-rolled-out choice.
+- ~~Treat the flow stopping time as a validation-selected hyperparameter.~~ **Implemented and measured** (`04` §16): helps in 18 of 36 conditions, mean +0.0018, best +0.0303, and it converts the DTD/ResNet-18 `full` rolled-out regression into a gain. Reported as an ablation; the required table still classifies `ẑ_T`.
+- **Still outstanding: one pass of `04` with `FORCE_RETRAIN_STANDARD = True`.** `04` §6 writes `best_T{T}.pt` alongside `best.pt` and §7 records `best_val_accuracy_at_T` / `test_accuracy_sel_T`, so that `standard T=4` and `rollout T=4` are selected under the same criterion. The re-run loaded all 54 standard runs from Drive, so those columns are still absent from `run_metrics.csv`. The retrained numbers will now be reproducible but will not match the stored ones to the last digit, so report both when it is done. Rolled-out runs are unaffected (`t = k/T` is deterministic and batch order was already seeded).
+- **No paired CI / McNemar on the CLIP branch.** `05` reports `delta_vs_control` as a difference of means only; it has no equivalent of `04` §14. Given how much §14 changed the reading of the image branch, the CLIP branch's "loses to the control in 28 of 36 cells" deserves the same treatment before it is quoted as settled.
+- **No validation-selected `t*` on the CLIP branch either**, even though that is where overshoot is worst (all 6 curves peak early, up to +4.2 points). `04` §16 is image-branch only. This is the single highest-value missing measurement in the project.
+- The optional intermediate-flow-time comparison of samples against prototypes is done. Whether early stopping interacts with the standard-vs-rolled-out choice is answerable from `04` §16, which reports `t*` per variant: rolled-out models have the earlier `t*` and the larger gain from stopping, consistent with their weaker constraint.
+- Not yet attempted: re-normalizing each Euler state back onto the unit sphere. Both endpoints are unit-norm and the classifier is cosine, but the straight-line path passes through the interior of the ball, so `distance_to_true_prototype` mixes angular and radial movement. One ablation would settle whether it matters.
+- Follow-up the controls opened: on Aircraft/DINOv2 a plain `direct` MLP captures 97% of FM's gain, while `residual` captures most of FM's advantage over `direct` elsewhere. Isolating the time conditioning alone — `residual` plus a `t` input, nothing else — would say precisely what flow matching contributes beyond iterative shared-weight computation.
+- See `doc/STAGE2_COMPLIANCE.md` for the clause-by-clause map of `ref/stage_2.pdf` and the explicit list of additions that are *not* part of the required experiment.
