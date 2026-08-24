@@ -126,7 +126,7 @@ Prompt ensembling helps where class names are natural-language-friendly (texture
 
 ### Stage 2 on this branch — measured
 
-`05_flow_matching_clip.ipynb` applies the identical FM layer here: CLIP RN50 image embeddings transported toward the frozen text prototypes, reusing the same `flow_matching` config so the two Stage 2 branches are directly comparable. 108 velocity networks, same protocol.
+`05_flow_matching_clip.ipynb` applies the identical FM layer here: CLIP RN50 image embeddings transported toward the frozen text prototypes, reusing the same `flow_matching` config so the two Stage 2 branches are directly comparable. 81 velocity networks (108 result rows, since the one standard network is reported at both `T`), same protocol.
 
 Best variant per cell, with **(Δ vs zero-shot / Δ vs the K-shot control)**:
 

@@ -195,6 +195,19 @@ class Data:
                     genuine=len(sig) - len(degen), per_ds=per_ds)
 
     @property
+    def network_counts(self):
+        """(image-branch networks, CLIP-branch networks, total).
+
+        Per (setting, repetition) one standard network is trained plus one per T, so the count
+        is settings x repetitions x (1 + |T|). This is NOT the result-row count, which is larger
+        because the single standard network is reported at every T.
+        """
+        reps, n_T = 3, 2
+        img = len({(r['dataset'], r['encoder'], r['shot']) for r in self.cmp4}) * reps * (1 + n_T)
+        clip = len({(r['dataset'], r['shot']) for r in self.cmp5}) * reps * (1 + n_T)
+        return img, clip, img + clip
+
+    @property
     def control_counts(self):
         both = sum(1 for r in self.controls
                    if f(r['fm_over_direct']) > 0 and f(r['fm_over_residual']) > 0)
@@ -414,12 +427,13 @@ def page_cover(pdf, d, n):
 
     total, improved, flat, regressed = d.cell_counts
     ci = d.ci_counts
+    n_img, n_clip, n_total = d.network_counts
     best_acc, best_delta = d.best_fm('aircraft', 'dinov2_vits14', 'full')
     tiles = [
         ('3 × 2', 'datasets × encoders',
          'DTD, FGVC-Aircraft, Flowers-102\nResNet-18, DINOv2 ViT-S/14'),
-        ('270', 'velocity networks trained',
-         '162  image-prototype branch\n108  CLIP text-prototype branch'),
+        (f'{n_total}', 'velocity networks trained',
+         f'{n_img}  image-prototype branch{NL}{n_clip}  CLIP text-prototype branch'),
         (f'+{best_delta * 100:.1f}', 'points, best ΔAcc',
          'FGVC-Aircraft / DINOv2, full data\nover the Stage 1 prototype baseline'),
         (f'{ci["genuine"]} / {ci["n"]}', 'cells that survive a paired CI',
@@ -604,7 +618,7 @@ def page_protocol(pdf, d, n):
            'Per (dataset, encoder, K, seed): one standard network and two rolled-out networks '
            '(T = 4, 12).\n\n'
            '· image branch   3 × 2 × 3 × 3 × 3 = 162 trainings\n'
-           '· CLIP branch    3 × 1 × 3 × 3 × 3 = 108 trainings\n\n'
+           '· CLIP branch    3 × 1 × 3 × 3 × 3 = 81 trainings\n\n'
            'Test data is touched only after checkpoint selection.')
 
     p.text(0.545, 0.706, 'Training-set sizes and repetitions', size=12, weight='bold')
