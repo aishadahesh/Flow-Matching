@@ -64,7 +64,27 @@ def _cells(nbfile):
     return json.load(io.open(nbfile, encoding='utf-8'))['cells']
 
 
+def cell_index(nbfile, needle):
+    """Index of the one code cell whose source contains `needle`.
+
+    Cells used to be addressed by literal position, which silently pulled the wrong table
+    the moment a section was inserted into a notebook. Every call site now names a string
+    that identifies the cell -- usually the artifact it writes -- and an ambiguous or
+    missing needle raises instead of quietly resolving to something else.
+    """
+    if isinstance(needle, int):
+        return needle
+    hits = [i for i, c in enumerate(_cells(nbfile))
+            if c['cell_type'] == 'code' and needle in ''.join(c['source'])]
+    if len(hits) != 1:
+        raise LookupError(
+            f'{nbfile.name}: {len(hits)} code cells contain {needle!r} (need exactly 1); '
+            f'matches at {hits}')
+    return hits[0]
+
+
 def nb_table(nbfile, cell, want=None):
+    cell = cell_index(nbfile, cell)
     """Return the rendered result table of `cell` as a list of dicts.
 
     pandas Styler output is HTML, so the numbers live only there; `text/plain` is just a
@@ -91,6 +111,7 @@ def nb_table(nbfile, cell, want=None):
 
 
 def nb_pivot_tail(nbfile, cell, fields):
+    cell = cell_index(nbfile, cell)
     """Parse a pandas pivot_table render, whose MultiIndex <th> cells carry rowspans.
 
     Row length varies with how many index levels repeat, so the index is ignored and the
@@ -121,12 +142,14 @@ def _is_num(v):
 
 
 def nb_image(nbfile, cell, which=0):
+    cell = cell_index(nbfile, cell)
     pngs = [o for o in _cells(nbfile)[cell].get('outputs', []) if 'image/png' in o.get('data', {})]
     data = base64.b64decode(pngs[which]['data']['image/png'])
     return mpimg.imread(io.BytesIO(data), format='png')
 
 
 def nb_gif_frames(nbfile, cell, which=0, frames=(0, 4, 8, 12)):
+    cell = cell_index(nbfile, cell)
     htmls = [o for o in _cells(nbfile)[cell].get('outputs', [])
              if 'image/gif' in ''.join(o.get('data', {}).get('text/html', ''))]
     b64 = re.search(r'base64,([A-Za-z0-9+/=]+)', ''.join(htmls[which]['data']['text/html'])).group(1)
@@ -147,22 +170,22 @@ class Data:
 
     def __init__(self):
         # --- image branch (04) ---
-        self.cmp4 = nb_table(NB4, 19)          # accuracy + baseline + delta_acc
-        self.paired = nb_table(NB4, 38)        # paired CI + McNemar
-        self.flowtime = nb_table(NB4, 33)      # cos / margin / accuracy over t
-        self.transitions = nb_table(NB4, 40)   # fixed / broken + pre-flow margins
-        self.tstar = nb_table(NB4, 42)         # validation-selected t*
-        self.geometry = nb_table(NB4, 44)      # W, B, W/B
-        self.steps = nb_pivot_tail(NB4, 46,    # inference-step ablation (a pivot_table)
+        self.cmp4 = nb_table(NB4, 'accuracy_summary_with_baseline.csv')          # accuracy + baseline + delta_acc
+        self.paired = nb_table(NB4, 'def stage1_baseline_run')        # paired CI + McNemar
+        self.flowtime = nb_table(NB4, 'intermediate_flow_time_metrics.csv')      # cos / margin / accuracy over t
+        self.transitions = nb_table(NB4, 'confusion_transitions.csv')   # fixed / broken + pre-flow margins
+        self.tstar = nb_table(NB4, 'validation_selected_tstar_summary.csv')         # validation-selected t*
+        self.geometry = nb_table(NB4, 'flow_geometry_summary.csv')      # W, B, W/B
+        self.steps = nb_pivot_tail(NB4, 'inference_step_ablation_summary.csv',    # inference-step ablation (a pivot_table)
                                    ['T1', 'T2', 'T4', 'T8', 'T12', 'frac_at_T1', 'frac_at_T2'])
-        self.controls = nb_table(NB4, 48)      # direct / residual controls
-        self.threeway = nb_table(NB4, 50)      # prototype / FM / linear probe
-        self.reverse4 = nb_table(NB4, 29)      # reverse-flow recovery
+        self.controls = nb_table(NB4, 'fm_vs_controls.csv')      # direct / residual controls
+        self.threeway = nb_table(NB4, 'fm_vs_linear_probe_context.csv')      # prototype / FM / linear probe
+        self.reverse4 = nb_table(NB4, 'reverse_flow_recovery.csv')      # reverse-flow recovery
         # --- CLIP branch (05) ---
-        self.cmp5 = nb_table(NB5, 24)
-        self.zeroshot = nb_table(NB5, 14)
-        self.reverse5 = nb_table(NB5, 34)
-        self.flowtime5 = nb_table(NB5, 38)
+        self.cmp5 = nb_table(NB5, 'accuracy_summary_with_baselines.csv')
+        self.zeroshot = nb_table(NB5, 'stage1_reported')
+        self.reverse5 = nb_table(NB5, 'reverse_flow_recovery.csv')
+        self.flowtime5 = nb_table(NB5, 'intermediate_flow_time_metrics.csv')
 
     # -- derived counts, computed rather than asserted -------------------------------
     def best_fm(self, ds, enc, shot):
@@ -711,7 +734,7 @@ def page_stage2_figure(pdf, d, n):
     p.title('The FM layer versus the prototype baseline')
     p.lead('Six panels, one per dataset × encoder. Black = Stage 1 baseline; blues = standard FM; '
            'reds = rolled-out FM. Error bars are ±1 SD across the Stage 1-matched repetitions.')
-    p.image(nb_image(NB4, 19), 0.075, 0.762, 0.86, 0.680)
+    p.image(nb_image(NB4, 'accuracy_vs_training_size.png'), 0.075, 0.762, 0.86, 0.680)
     p.close()
 
 
@@ -952,7 +975,7 @@ def page_clip(pdf, d, n):
            'layer trains on labels, this is no longer zero-shot — so a same-supervision control is '
            'required: image prototypes built from the same CLIP features and the same K-shot subsets, '
            'closed-form, with zero trained parameters.')
-    p.image(nb_image(NB5, 24), 0.075, 0.735, 0.86, 0.395)
+    p.image(nb_image(NB5, 'accuracy_vs_training_size.png'), 0.075, 0.735, 0.86, 0.395)
 
     zs, ctl, tot, best = d.clip_counts
     p.callout(0.055, 0.315, 0.43, 0.185, 'Against zero-shot: large gains',
@@ -991,7 +1014,7 @@ def page_geometry_pca(pdf, d, n):
                  'class prototypes (X). One PCA is fitted jointly across all three views and the '
                  'prototypes, and all panels share axis limits, so a point\'s movement between panels is '
                  'a real displacement in one shared plane.',
-                 nb_image(NB4, 23),
+                 nb_image(NB4, 'feature_space_comparison.png'),
                  'The mechanism is visible directly: overlapping class clouds are contracted onto their '
                  'prototypes. Because the network cannot see the label at test time, points in ambiguous '
                  'regions are pulled toward whichever prototype\'s basin they fall in — which is why '
@@ -1005,7 +1028,7 @@ def page_geometry_tsne(pdf, d, n):
                  'The identical transported tensors under t-SNE instead of PCA, fitted once per row over '
                  'all three views and the prototypes. Cluster separation reads well here; distances do '
                  'not.',
-                 nb_image(NB4, 25),
+                 nb_image(NB4, 'feature_space_comparison_tsne.png'),
                  'Read this qualitatively and use the PCA page for anything geometric. t-SNE normalises '
                  'local density, so it deliberately re-expands the tightly contracted post-FM clusters — '
                  'the visual shrinkage looks far milder here than it is numerically.', accent=AMBER)
@@ -1017,7 +1040,7 @@ def page_trajectories(pdf, d, n):
                  'Intermediate Euler states for representative test examples, from the original feature '
                  '(green) through every step to the transported endpoint (purple square) and the target '
                  'prototype (X). PCA rather than t-SNE, so a straight path stays a straight path.',
-                 nb_image(NB4, 27),
+                 nb_image(NB4, 'flow_trajectories.png'),
                  'The paths are close to straight, which is the geometric counterpart of the '
                  'T-independence result: when the learned field matches the ideal constant velocity, '
                  'four steps and twelve steps arrive at the same place.', img_h=0.360, note_y=0.500)
@@ -1029,7 +1052,7 @@ def page_clip_geometry(pdf, d, n):
                  'The same three-view comparison on the CLIP branch. The image embeddings and the text '
                  'prototypes (X) start in visibly different regions — that separation is CLIP\'s '
                  'image–text modality gap — and the learned transport carries the image cloud across it.',
-                 nb_image(NB5, 28),
+                 nb_image(NB5, 'feature_space_comparison.png'),
                  'This is the qualitative reason the CLIP branch behaves differently from the image '
                  'branch: the transport has to cross a systematic offset between two modalities, not '
                  'merely denoise within one feature space.')
@@ -1042,7 +1065,7 @@ def page_flow_time(pdf, d, n):
            'the complete test split. The t=0 end is asserted, not assumed — in 04 against Stage 1\'s '
            'saved per-run metrics.json, in 05 against the zero-shot baseline — and both assertions '
            'passed, so each curve provably starts at the baseline and ends at the FM result.')
-    p.image(nb_image(NB4, 34, 0), 0.050, 0.742, 0.43, 0.590)
+    p.image(nb_image(NB4, 'accuracy_vs_flow_time.png', 0), 0.050, 0.742, 0.43, 0.590)
 
     ar = next(r for r in d.flowtime if r['dataset'] == 'aircraft'
               and r['encoder'] == 'resnet18' and 'standard' in r['model'])
@@ -1125,7 +1148,7 @@ def page_snapshots(pdf, d, n):
                  'Samples and prototypes (X) at t = 0, 1/4, 1/2, 3/4, 1. Each row is one dataset at its '
                  'strongest encoder, once per training objective; one PCA is fitted jointly over every '
                  'snapshot plus the prototypes, and all five panels of a row share axis limits.',
-                 nb_image(NB4, 36),
+                 nb_image(NB4, 'intermediate_flow_time_snapshots.png'),
                  'The contraction is the mechanism made visible: overlapping class clouds are drawn onto '
                  'their prototypes. Standard FM moves points along nearly straight, roughly parallel '
                  'paths; rolled-out FM, supervised only at the endpoint, takes a more curved route and '
@@ -1194,8 +1217,8 @@ def page_ablation_geometry(pdf, d, n):
            'within/between class-scatter ratio W(t)/B(t), which falls only if classes tighten relative '
            'to their separation; and an inference-only sweep over the number of Euler steps.')
 
-    p.image(nb_image(NB4, 44), 0.055, 0.700, 0.42, 0.280)
-    p.image(nb_image(NB4, 46), 0.510, 0.700, 0.42, 0.280)
+    p.image(nb_image(NB4, 'flow_geometry_vs_time.png'), 0.055, 0.700, 0.42, 0.280)
+    p.image(nb_image(NB4, 'inference_step_ablation.png'), 0.510, 0.700, 0.42, 0.280)
     p.text(0.265, 0.408, 'W/B and accuracy over flow time', size=8.6, color=FAINT, ha='center')
     p.text(0.720, 0.408, 'accuracy against Euler steps at inference', size=8.6, color=FAINT,
            ha='center')
@@ -1272,7 +1295,7 @@ def page_reverse(pdf, d, n):
               'corrected: a text prototype does not start out inside its own class\'s image cloud.',
               accent=GREEN, size=8.6, title_size=9.5)
 
-    p.image(nb_image(NB5, 36), 0.055, 0.350, 0.48, 0.190)
+    p.image(nb_image(NB5, 'reverse_flow.png'), 0.055, 0.350, 0.48, 0.190)
     p.note(0.055, 0.150, 0.48,
            'CLIP text prototypes (P) integrated backward over the real test embeddings, at reverse '
            't = 1 → 0. They start off to one side — that is the gap — and move in.', size=8.4)
@@ -1292,7 +1315,7 @@ def page_animation(pdf, d, n):
            f'rolled-out FM (right) starting from an identical test feature, with the arrow showing the '
            f'actual Euler update at that step. The setting is chosen programmatically as the largest-gain '
            f'one — Aircraft / DINOv2, where the layer is worth +{best_delta * 100:.1f} points.')
-    frames = nb_gif_frames(NB4, 52, 0, frames=(0, 4, 8, 12))
+    frames = nb_gif_frames(NB4, 'flow_animation_', 0, frames=(0, 4, 8, 12))
     for i, (arr, k) in enumerate(zip(frames, (0, 4, 8, 12))):
         col, row = i % 2, i // 2
         x = 0.070 + col * 0.445
