@@ -38,7 +38,7 @@ The required deliverable is **`04_flow_matching.ipynb`** (image-derived class pr
 | **2. Training curves** — representative standard and rolled-out losses; verify stable convergence | §9 | Training loss for standard and both rolled-out objectives, 10-shot / seed 0, all six pairs. The two losses are different quantities on different scales and are not compared in magnitude; the shared log axis is for stability checking only. A companion validation-accuracy panel is *not* implemented — `val_accuracy` is in every `history.csv` if it is wanted. |
 | **3. Feature-space visualizations** — original vs standard-FM vs rolled-out-FM, same examples/colours/prototypes, projection fit **jointly** | §10 (PCA), §10b (t-SNE) | One fit over the row-stacked `[z ∣ z_std ∣ z_roll ∣ prototypes]`; all panels share axis limits. The subset is the first 10 classes and up to 30 test examples each, hardcoded per cell rather than saved to a manifest. |
 | **4. Flow trajectories** — intermediate states with original feature, final feature and prototype; PCA recommended | §11 | Three examples per dataset at its strongest encoder: the first test example of each of the first three classes, one jointly-fit PCA per trajectory. Selection is by class index, not by transition type. |
-| *Optional:* explore the flow in reverse from the prototypes | §12, §12b | Quantitative (recovery rate + continuous `cos`/`L2` to class means) as well as visual. |
+| *Optional:* explore the flow in reverse from the prototypes | §12, §12b | Quantitative and visual. The image branch reports recovery plus cosine movement; the CLIP branch additionally reports cosine/L2 to class image means. |
 | *Optional:* compare samples and prototypes at intermediate flow times | §13, §13b | `t=0` is asserted equal to Stage 1's saved accuracy to `1e-6`, which anchors every `ΔAcc` claim. |
 
 ---
@@ -64,19 +64,21 @@ These exist to make the required result trustworthy or interpretable. None of th
 
 ### Execution status (2026-08-24 run)
 
-Every section in the tables above has now been executed. What the non-required sections returned, in one line each,
-because two of them qualify the required result rather than merely decorating it:
+Every required section and every ungated post-hoc section in the tables above has now been executed. The
+gated zero-init pilot (§6b) and extended-repetition supplement (§14b) remain unrun. What the executed
+non-required sections returned, in one line each, because two of them qualify the required result rather
+than merely decorating it:
 
 | Section | Outcome |
 |---|---|
 | §5b | Subset identity verified for 42 (dataset, encoder, K, seed) combinations at max drift `0.00e+00`. The reused subsets are Stage 1's exactly. |
-| §14 | **Qualifies §8.** 66 of 72 cells have a positive paired ΔAcc, but only 39 have a 95% CI excluding zero (24/24 Aircraft, 7/24 DTD). The two regressions are not significant either. |
+| §14 | **Qualifies §8.** 66 of 72 cells have a positive paired ΔAcc; 48 intervals exclude zero (24/24 Aircraft, 7/24 DTD, 17/24 Flowers-102). Eight of the Flowers-102 results are degenerate K=10 intervals with one effective subset, leaving 40 non-degenerate effects. None of the three mean regressions is significant. |
 | §15 | In every setting, samples the layer fixes had negative pre-flow margin and samples it breaks had positive pre-flow margin. |
 | §16 | Validation-selected `t*` helps in 18 of 36 conditions, mean +0.0018, best +0.0303; it converts DTD/ResNet-18 `full` rolled-out from −.0206 to +.0097 over the baseline. |
 | §17 | `W(t)/B(t)` falls in all 12 curves (median −0.219): the flow discriminates, not merely contracts. |
 | §18 | `T = 2` already yields the full `T = 12` gain (median 100%); `T = 1` yields ~62% and is negative in 3 settings. |
 | §19 | **Qualifies §8.** FM beats both controls in 16 of 18 settings, but on Aircraft/DINOv2 a plain `direct` MLP delivers 97% of FM's gain over the baseline. |
-| §20 | FM closes a median 59% (range 10–87%) of the prototype → probe gap where the probe leads; it beats the probe in 4 of 18 settings, all near-saturated. |
+| §20 | Across all 18 rows the notebook reports a signed median gap-closed value of 46%; restricted to the 14 settings where the probe actually leads the prototype, the median is 59% (range 10–87%). FM beats the probe in 4 of 18 settings, all near-saturated. |
 
 §14 and §19 are the two that must travel with the §8 table. Neither changes the protocol or the reported
 `test_accuracy`; both change what the number may be claimed to show.
@@ -97,6 +99,8 @@ Standard FM now saves two checkpoints from a single training run: `best.pt` (hig
 
 `05_flow_matching_clip.ipynb` applies the same layer to CLIP RN50 image embeddings transported toward frozen **text** prototypes. `ref/stage_1.pdf` asks each group to pick one prototype branch; this project implemented both, and the image-prototype branch is the Stage 2 deliverable.
 
-Its numbers must never be merged into the Stage 2 table, for one specific reason: the FM layer trains on labelled pairs, so it converts zero-shot CLIP into a K-shot method, and `ΔAcc` against the zero-shot baseline measures the *labels* as much as the layer. That notebook therefore always reports three numbers together — zero-shot CLIP, the K-shot image-prototype control on the same CLIP features, and FM — and `delta_vs_control` is the only like-for-like comparison on that branch. Both of the analyses it used to lack are now written: §19 adds the paired per-seed CI and McNemar against the control, and §20 adds the validation-selected `t*`; the animation section moved to §21. **Neither has been executed yet**, so "loses to the control in 28 of 36 cells" is still a difference of means until `05` is re-run, and should be quoted as such in the meantime.
+Its numbers must never be merged into the Stage 2 table, for one specific reason: the FM layer trains on labelled pairs, so it converts zero-shot CLIP into a K-shot method, and `ΔAcc` against the zero-shot baseline measures the *labels* as much as the layer. That notebook therefore always reports three numbers together — zero-shot CLIP, the K-shot image-prototype control on the same CLIP features, and FM — and `delta_vs_control` is the only like-for-like comparison on that branch.
+
+The completed rerun executed §9 and §§19–21. The raw means put FM above the control in 8 of 36 cells and below it in 28. Paired seed-level 95% intervals exclude zero in 34 cells: 6 favor FM, 28 favor the control, and 2 show no measurable difference. Four of the 34 are degenerate Flowers-102 K=10 intervals with one effective subset. Validation-selected `t*` helps in 17 of 18 conditions (mean +.0239, best +.0520), but no tested condition crosses from below the control at `t=1` to above it at `t*`. The CLIP branch conclusion is therefore stronger after the rerun: FM usually beats zero-shot because it uses labels, but usually loses to the like-for-like K-shot control.
 
 One finding is specific to it and worth stating: reverse flow **exceeds** the pre-transport reference there (recovery 1.000 / 0.750 / 1.000 against 0.553 / 0.250 / 0.745), because a CLIP text prototype does not start out inside its own image cloud and backward integration carries it toward that cloud. On the image branch no such improvement is possible — the forward prototype already *is* the class image mean. Earlier wording in both notebooks called the forward reference a "ceiling"; that was correct only for the image branch and has been corrected.

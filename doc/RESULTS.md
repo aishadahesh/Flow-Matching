@@ -82,7 +82,7 @@ Best of the four FM variants (standard/rolled-out × T ∈ {4,12}), with ΔAcc a
 | Flowers-102 / ResNet-18 | .7522 | .7859 | **.8252** |
 | Flowers-102 / DINOv2 | .9940 | **.9944** | .9937 |
 
-Measured in `04` §20: where the probe actually leads the prototype baseline (14 of 18 settings), FM closes a **median 59% of that gap, range 10–87%**. In the other 4 settings the probe sits *below* the prototype baseline, so "gap closed" is not a meaningful fraction there. FM overtakes the probe in 4 of 18 settings — saturated Flowers-102 at all three K, plus DTD/ResNet-18 at K=5 — where the differences are inside seed noise. Honest framing: the FM layer is a real improvement over the prototype rule it replaces, not a replacement for a discriminatively trained classifier.
+Measured in `04` §20, the notebook's signed median over all 18 rows is **46%**. Restricting the fraction to the 14 settings where the linear probe actually leads the prototype baseline gives the more interpretable **59% median, range 10–87%**. In the other 4 settings the probe sits *below* the prototype baseline, so "gap closed" is not a meaningful fraction. FM overtakes the probe in those same 4 settings — saturated Flowers-102 at all three K, plus DTD/ResNet-18 at K=5 — where the differences are inside seed noise. Honest framing: the FM layer is a real improvement over the prototype rule it replaces, not a replacement for a discriminatively trained classifier.
 
 **3. Standard FM beats rolled-out training in most settings.** Comparing the better `T` of each objective across the 18 (dataset, encoder, K) cells: standard wins 14, rolled-out wins 3 (Aircraft/DINOv2 at K=5 and K=10, plus Flowers-102/DINOv2 at K=10 by .0001), one tie (Flowers-102/DINOv2 at K=5). The largest single divergence is Aircraft/DINOv2 at `full`: standard .5852 vs rolled-out .5392, a .046 gap in standard's favour. Rolled-out training is also the only variant that ever loses to the baseline (DTD/ResNet-18 full, −.021), and it costs more — backprop through T sequential steps, roughly 1.5–2.5× standard FM per run, scaling with T.
 
@@ -145,6 +145,10 @@ The two reference lines it is measured against:
 | Flowers-102 | 0.6360 | 0.8310 | 0.8824 | 0.8824 |
 
 **This is the result the control was added for.** Against zero-shot, FM looks decisive: it wins 32 of 36 cells, by as much as +24.8 points on DTD at full data. Against the *same-supervision* control — image prototypes built from the same CLIP features and the same K-shot subsets, zero trained parameters — it wins only 8 of 36, and only on DTD at K=10 and K=full. Everywhere else, simply averaging the labelled CLIP features beats transporting toward text prototypes.
+
+The rerun now makes that control comparison paired rather than only a difference of means. Across the 36 `(dataset, K, objective, T)` cells, seed-level 95% intervals exclude zero in 34: **6 favor FM, 28 favor the control, and 2 show no measurable difference**. The two unresolved cells are DTD K=10 rolled-out at `T=4` and `T=12`; the six supported FM wins are DTD K=10 standard at both `T` values and all four DTD full-data cells. Four of the 34 excluding-zero intervals are degenerate Flowers-102 K=10 results with one effective subset, so their intervals collapse to points by construction.
+
+Validation-selected stopping at `t*` also ran. It improves 17 of 18 CLIP conditions (mean +.0239, best +.0520), but **none of the 18 tested conditions crosses from below the K-shot control at `t=1` to above it at `t*`**. Early stopping reduces overshoot; it does not overturn the like-for-like conclusion.
 
 Two further points worth stating plainly:
 
@@ -218,20 +222,20 @@ Standard and rolled-out side by side from an identical starting feature, with th
 Points 1–10 are the headline results; the section after this one is the evidence that qualifies points 2 and 3, and it should be read with them rather than after them.
 
 1. **Encoder choice dominates.** DINOv2 ViT-S/14 over ResNet-18 is worth +14 to +31 points — larger than any method difference measured here.
-2. **The FM layer works, but on fewer cells than the raw table suggests.** It improves on the prototype baseline in 66 of 72 cells (3 flat, 3 regressions), and the gain grows with K up to +.24 on Aircraft/DINOv2 at full data. Under the **paired** 95% CI (§14) only 39 of 72 are genuinely distinguishable from zero: all 24 Aircraft cells, but just 7 of 24 on DTD. The sub-1-point DTD gains are no measurable effect, and — symmetrically — neither are the two regressions.
-3. **It does not beat a linear probe, and most of the largest gain is not specific to flow matching.** FM closes a median 59% (range 10–87%) of the prototype-to-probe gap where the probe leads, and overtakes the probe in 4 of 18 settings, all near-saturated. The controls (§19) sharpen this: FM beats both a plain MLP and a time-free residual stack in 16 of 18 settings, but on the +24-point Aircraft/DINOv2 headline a plain `direct` MLP already delivers 97% of the gain. Flow matching's *specific* contribution is largest where the plain MLP overfits below the baseline — DTD and Flowers-102 on ResNet-18, +.042 to +.063.
+2. **The FM layer works, but on fewer cells than the raw table suggests.** It improves on the prototype baseline in 66 of 72 cells (3 flat, 3 regressions), and the gain grows with K up to +.24 on Aircraft/DINOv2 at full data. Under the **paired** 95% CI (§14), 48 of 72 intervals exclude zero: all 24 Aircraft cells, 7 of 24 on DTD, and 17 of 24 on Flowers-102. Eight Flowers-102 K=10 intervals are degenerate because there is one effective subset, leaving 40 non-degenerate effects. None of the three mean regressions is significant.
+3. **It does not beat a linear probe, and most of the largest gain is not specific to flow matching.** The notebook reports a 46% signed median gap closed over all 18 rows; restricted to the 14 rows where the probe leads the prototype, the median is 59% (range 10–87%). FM overtakes the probe in 4 of 18 settings, all near-saturated. The controls (§19) sharpen this: FM beats both a plain MLP and a time-free residual stack in 16 of 18 settings, but on the +24-point Aircraft/DINOv2 headline a plain `direct` MLP already delivers 97% of the gain. Flow matching's *specific* contribution is largest where the plain MLP overfits below the baseline — DTD and Flowers-102 on ResNet-18, +.042 to +.063.
 4. **Standard FM ≥ rolled-out training**, on accuracy (14 of 18 settings) and on compute. Rolled-out training is also the only variant that ever regresses below the baseline, the one that overshoots hardest (point 8), and the one that improves `W/B` least (§17).
 5. **T is nearly irrelevant** for standard FM, for a structural reason: the ideal velocity is constant along the path, so the Euler endpoint is T-independent. The step ablation (§18) puts a floor on that — two Euler steps deliver the full `T=12` gain (median 100%), one step delivers only ~62% and can be worse than not running the flow at all.
-6. **On the CLIP branch the fair control reverses the headline.** FM beats zero-shot in 32 of 36 cells but loses to a same-supervision control in 28 of 36. The large Δ vs zero-shot measures the labels, not the layer. (This branch has no paired CI yet — see Open items.)
+6. **On the CLIP branch the fair control reverses the headline.** FM beats zero-shot in 32 of 36 cells. Raw means beat the same-supervision control in only 8 of 36; the paired analysis supports 6 FM wins, 28 control wins, and 2 no-effect cells. The large Δ vs zero-shot measures the labels, not the layer.
 7. **The FM layer repairs a broken classifier rather than sharpening a working one.** Cosine to the true prototype rises everywhere, but the *margin* against the best competitor only rises where the baseline was already mis-ranked (Aircraft). §15 makes the mechanism concrete: in every setting, samples the layer fixes had negative pre-flow margin and samples it breaks had positive pre-flow margin. §17 adds the class-structure view — `W/B` falls in all 12 curves, so the flow really does discriminate rather than merely contract, but falling `W/B` converts into accuracy only where the true prototype was not already ranked first.
-8. **`t=1` is a convention, not an optimum.** Accuracy peaks before the endpoint in all 6 CLIP-branch curves and 6 of 12 image-branch curves — up to +4.2 points left on the table by rolled-out models on CLIP/Flowers. Selecting `t*` honestly on validation (§16) helps in 18 of 36 conditions, mean +0.0018, and converts the project's only real regression (DTD/ResNet-18 `full`, rolled-out) from −.021 into +.010.
+8. **`t=1` is a convention, not an optimum.** Accuracy peaks before the endpoint in all 6 representative CLIP-branch curves and 6 of 12 image-branch curves. Validation-selected `t*` helps in 18 of 36 image-branch conditions (mean +.0018, best +.0303) and converts the largest regression (DTD/ResNet-18 `full`, rolled-out) from −.021 into +.010. On CLIP it helps in 17 of 18 conditions (mean +.0239, best +.0520), but no tested condition crosses from below the K-shot control to above it.
 9. **The reverse flow makes CLIP's modality gap measurable.** Backward-integrating the text prototypes raises their recovery rate from .55/.25/.75 to 1.00/.75/1.00 — the forward rate measures the gap, the reverse pass closes it. On the image branch the same operation barely moves anything, which is what a contraction should do.
-10. **Two reporting caveats that must not be silently dropped**: Flowers-102 at K=10 has zero variance by construction (the train split is exactly 10/class), which also makes 9 of the 48 "significant" cells in §14 degenerate; and the Stage 1 image-prototype `full` baseline is a single run, so it has no error bar and the full-data deltas are unpaired.
+10. **Two reporting caveats that must not be silently dropped**: Flowers-102 at K=10 has zero variance by construction (the train split is exactly 10/class), which makes 8 of the 48 excluding-zero image-branch intervals degenerate; and the Stage 1 image-prototype `full` baseline is a single run, so it has no error bar and the full-data deltas are paired only to a repeated constant baseline.
 
 ## Hardening, ablations and controls — measured
 
 The analyses added after the external review (2026-08-23) have now been executed. `04_flow_matching.ipynb`
-ran Sections 5b and 14–21 and `05_flow_matching_clip.ipynb` ran Sections 17–19; every number below comes
+ran Sections 5b and 14–21 and `05_flow_matching_clip.ipynb` ran Section 9 and Sections 17–21; every number below comes
 from that run. Two things about the run itself, reported rather than quietly absorbed:
 
 - **The stored accuracies did not shift.** Section 7 printed `Result rows: 216 | runs that actually
@@ -259,15 +263,15 @@ a 95% t-interval over the 3 repetitions. The two statements are very different:
 |---|---|
 | positive mean paired ΔAcc | 66 |
 | 95% CI excludes zero | 48 |
-| …of which are degenerate (`std = 0` by construction, all Flowers-102) | 9 |
-| **genuinely distinguishable from zero** | **39** |
+| …of which are degenerate (`std = 0` by construction, all Flowers-102 K=10) | 8 |
+| **non-degenerate intervals excluding zero** | **40** |
 
 Broken down by dataset, this is not uniform at all:
 
 | Dataset | CI excludes zero |
 |---|---|
 | FGVC-Aircraft | **24 of 24** |
-| Flowers-102 | 17 of 24 (9 of them degenerate) |
+| Flowers-102 | 17 of 24 (8 of them degenerate) |
 | DTD | **7 of 24** |
 
 **The sub-1-point DTD gains do not survive.** Of DTD's 24 cells only the four DINOv2 `full` cells (+.030
@@ -276,7 +280,7 @@ to +.033), the two DINOv2 K=10 standard cells (+.0144, +.0145) and DTD/ResNet-18
 K=10 cell — has a CI straddling zero and must be restated as **no measurable effect**, not as a small
 gain. The `n=3` interval is wide, which is honest rather than unfortunate.
 
-Symmetrically, **the two regressions are not significant either**: DTD/ResNet-18 `full` rolled-out is
+Symmetrically, **none of the three mean regressions is significant**. The two material regressions are DTD/ResNet-18 `full` rolled-out:
 −.0213 (CI [−.0522, +.0096]) at `T=4` and −.0206 (CI [−.0499, +.0088]) at `T=12`. They are the largest
 regressions measured and they still cannot be distinguished from zero at `n=3`.
 
@@ -423,33 +427,23 @@ can beat where it started. The forward value is a **pre-transport reference**; i
 ceiling only on the image branch, where the prototype already is the class image mean. Summary point 9
 was always stated correctly - it was the notebook prose that mislabelled it.
 
-## Implemented, awaiting a Colab run
+## Gated analyses not run
 
-Four additions were written after the 2026-08-24 review of these results. **None of them has been executed, so no number in this file comes from them** — they are listed here so the distinction between "coded" and "measured" stays explicit, which is exactly what went wrong the last time analyses were added ahead of a run.
+The rerun completed the `05` control-prediction, paired-CI, validation-selected stopping, and animation sections. Two opt-in analyses remain deliberately disabled and do not contribute any result above:
 
-| Where | What | Why it was added |
+| Where | Status | Purpose |
 |---|---|---|
-| `05` §9 | The K-shot control now saves per-run test predictions | Blocker for the paired test below: it computed predictions and kept only the accuracy |
-| `05` §19 | Paired ΔAcc vs the control, 95% CIs, McNemar | This branch's *"loses to the control in 28 of 36 cells"* is still a difference of means. The identical statistic cut the image branch from 66/72 to 39/72 |
-| `05` §20 | Validation-selected stopping time `t*` | All 6 curves on this branch peak before `t=1`, up to +4.2 points unclaimed — the largest unrealised gain in the project |
-| `04` §14b, `05` §19b | Extended-repetition supplement, seeds 0–9 | The fix for the resolution problem below. Intervals should narrow ~3.4× at `n=10` |
-| `04` §6b | Zero-init pilot for the velocity net's output layer | Should remove the 3 regressions and cut seed variance. Verified locally to make the rollout the exact identity at init |
+| `04` §14b, `05` §19b | `RUN_EXTENDED = False` | Ten-repetition supplement; the notebooks report about 540 and 270 velocity networks respectively. It narrows intervals without changing the required `n=3` table. |
+| `04` §6b | `RUN_ZERO_INIT_PILOT = False` | Pilot for a zero-initialized output layer. The identity-at-initialization guard passed, but the comparative pilot did not run. |
 
-**What to run, in order.** All of it is cheap — measured training time is 1–5 s per network on `04` and 1–28 s on `05`.
-
-1. `05` top to bottom. §9 rewrites the control with predictions; §19 and §20 then produce their numbers. No retraining of the FM grid — everything is post-hoc on saved checkpoints.
-2. `04` once with `FORCE_RETRAIN_STANDARD = True`, then set it back to `False`.
-3. `04` §6b with `RUN_ZERO_INIT_PILOT = True` (~72 networks). Adopt zero-init only if the regressions clear, the seed spread falls, and `mean_epochs` has not blown out.
-4. `04` §14b and `05` §19b with `RUN_EXTENDED = True` (~380 and ~190 networks). This is the one that should change how these results read.
-
-Then `python doc/build_report.py` — it parses every number from the notebooks, so the report refreshes itself.
+The separate `04` pass with `FORCE_RETRAIN_STANDARD = True` is also still outstanding; it is needed only to populate the per-`T` checkpoint-selection columns for already-saved standard-FM runs.
 
 ## Open items
 
 - ~~Treat the flow stopping time as a validation-selected hyperparameter.~~ **Implemented and measured** (`04` §16): helps in 18 of 36 conditions, mean +0.0018, best +0.0303, and it converts the DTD/ResNet-18 `full` rolled-out regression into a gain. Reported as an ablation; the required table still classifies `ẑ_T`.
-- ~~No paired CI / McNemar on the CLIP branch.~~ **Implemented** as `05` §19, not yet run.
-- ~~No validation-selected `t*` on the CLIP branch.~~ **Implemented** as `05` §20, not yet run.
-- **The intervals are underpowered at `n=3`, and that is the main reason these results read as weak.** 33 of 72 cells cannot be called either way; on DTD it is 17 of 24. This is statistical resolution, not the FM layer: the two-sided t-multiplier at `n=3` is 4.30. `ref/stage_2.pdf` fixes the required protocol at Stage 1's 3 repetitions, so the fix is the §14b / §19b supplement rather than a change to the required table.
+- ~~No paired CI / McNemar on the CLIP branch.~~ **Implemented and measured** as `05` §19: 6 cells favor FM, 28 favor the control, and 2 show no measurable difference.
+- ~~No validation-selected `t*` on the CLIP branch.~~ **Implemented and measured** as `05` §20: helps in 17 of 18 conditions (mean +.0239, best +.0520) but flips no control-relative loss into a win.
+- **The intervals remain underpowered at `n=3`.** On the image branch, 24 of 72 cells cannot be called either way; on DTD it is 17 of 24. Eight additional excluding-zero cells are degenerate Flowers-102 K=10 results with one effective subset. This is statistical resolution, not the FM layer: the two-sided t-multiplier at `n=3` is 4.30. `ref/stage_2.pdf` fixes the required protocol at Stage 1's 3 repetitions, so the fix is the §14b / §19b supplement rather than a change to the required table.
 - **Still outstanding: one pass of `04` with `FORCE_RETRAIN_STANDARD = True`.** `04` §6 writes `best_T{T}.pt` alongside `best.pt` and §7 records `best_val_accuracy_at_T` / `test_accuracy_sel_T`, so `standard T=4` and `rollout T=4` are selected under the same criterion. The last run loaded all 54 standard runs from Drive, so those columns are still absent. Retrained numbers will be reproducible but will not match the stored ones to the last digit — report both.
 - Not yet attempted: re-normalizing each Euler state back onto the unit sphere. Both endpoints are unit-norm and the classifier is cosine, but the straight-line path passes through the interior of the ball, so `distance_to_true_prototype` mixes angular and radial movement. Note that renormalizing only the *final* state is provably a no-op — cosine similarity is scale-invariant — so only per-step renormalization is worth testing, and it deviates from the specified integrator, so it would be an ablation.
 - Follow-up the controls opened, and now the most informative experiment left: on Aircraft/DINOv2 a plain `direct` MLP captures 97% of FM's gain, while `residual` captures most of FM's advantage over `direct` elsewhere. Isolating the time conditioning alone — `residual` plus a `t` input, nothing else — would say precisely what flow matching contributes beyond iterative shared-weight computation. If it is run, the §19 controls must be swept identically to whatever FM gets, or the comparison stops being fair.

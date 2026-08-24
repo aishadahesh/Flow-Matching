@@ -418,6 +418,8 @@ Two properties of that branch differ, and must be stated whenever its numbers ar
 
 Text prototypes are also K-independent - unlike image prototypes they do not change with the subset or the seed, so the transport target is identical across every setting.
 
+The completed CLIP-branch rerun sharpens the interpretation. Against the K-shot control, the mean FM accuracy is higher in 8 of 36 cells, but paired seed-level 95% intervals support only 6 FM wins; 28 cells favor the control and 2 show no measurable difference. Validation-selected early stopping of the flow helps 17 of 18 tested `(dataset, K, objective)` conditions (mean +.0239, best +.0520), but it does not turn any control-relative loss into a win. The large gains over zero-shot therefore remain gains from adding labels, not evidence that FM beats the like-for-like control.
+
 ## 22. Stage 2 failure modes to prevent
 
 In addition to every Stage 1 failure mode in section 10:
@@ -443,4 +445,4 @@ Stage 2 is done when:
 
 Measured outcomes against these criteria are in `RESULTS.md`; remaining open items are tracked in `TODO_stage2.md`.
 
-All five criteria are met. Two results from the non-required analyses have to travel with the required table rather than be filed separately, because they change what it may be claimed to show: the paired 95% CI leaves 39 of 72 cells distinguishable from zero (24/24 on Aircraft, 7/24 on DTD), and on the largest-gain setting (Aircraft/DINOv2) a plain supervised MLP with no flow reaches 97% of the FM gain over the baseline. `STAGE2_COMPLIANCE.md` maps every specification clause to where it is satisfied and lists everything that is deliberately *not* part of the required experiment.
+All five criteria are met. Two results from the non-required analyses have to travel with the required table rather than be filed separately, because they change what it may be claimed to show: the paired 95% CI excludes zero in 48 of 72 cells (24/24 Aircraft, 7/24 DTD, 17/24 Flowers-102), although 8 Flowers-102 K=10 intervals are degenerate because there is only one effective subset; excluding those leaves 40 non-degenerate effects. On the largest-gain setting (Aircraft/DINOv2), a plain supervised MLP with no flow reaches 97% of the FM gain over the baseline. `STAGE2_COMPLIANCE.md` maps every specification clause to where it is satisfied and lists everything that is deliberately *not* part of the required experiment.
