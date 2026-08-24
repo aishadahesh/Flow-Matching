@@ -423,13 +423,35 @@ can beat where it started. The forward value is a **pre-transport reference**; i
 ceiling only on the image branch, where the prototype already is the class image mean. Summary point 9
 was always stated correctly - it was the notebook prose that mislabelled it.
 
+## Implemented, awaiting a Colab run
+
+Four additions were written after the 2026-08-24 review of these results. **None of them has been executed, so no number in this file comes from them** — they are listed here so the distinction between "coded" and "measured" stays explicit, which is exactly what went wrong the last time analyses were added ahead of a run.
+
+| Where | What | Why it was added |
+|---|---|---|
+| `05` §9 | The K-shot control now saves per-run test predictions | Blocker for the paired test below: it computed predictions and kept only the accuracy |
+| `05` §19 | Paired ΔAcc vs the control, 95% CIs, McNemar | This branch's *"loses to the control in 28 of 36 cells"* is still a difference of means. The identical statistic cut the image branch from 66/72 to 39/72 |
+| `05` §20 | Validation-selected stopping time `t*` | All 6 curves on this branch peak before `t=1`, up to +4.2 points unclaimed — the largest unrealised gain in the project |
+| `04` §14b, `05` §19b | Extended-repetition supplement, seeds 0–9 | The fix for the resolution problem below. Intervals should narrow ~3.4× at `n=10` |
+| `04` §6b | Zero-init pilot for the velocity net's output layer | Should remove the 3 regressions and cut seed variance. Verified locally to make the rollout the exact identity at init |
+
+**What to run, in order.** All of it is cheap — measured training time is 1–5 s per network on `04` and 1–28 s on `05`.
+
+1. `05` top to bottom. §9 rewrites the control with predictions; §19 and §20 then produce their numbers. No retraining of the FM grid — everything is post-hoc on saved checkpoints.
+2. `04` once with `FORCE_RETRAIN_STANDARD = True`, then set it back to `False`.
+3. `04` §6b with `RUN_ZERO_INIT_PILOT = True` (~72 networks). Adopt zero-init only if the regressions clear, the seed spread falls, and `mean_epochs` has not blown out.
+4. `04` §14b and `05` §19b with `RUN_EXTENDED = True` (~380 and ~190 networks). This is the one that should change how these results read.
+
+Then `python doc/build_report.py` — it parses every number from the notebooks, so the report refreshes itself.
+
 ## Open items
 
 - ~~Treat the flow stopping time as a validation-selected hyperparameter.~~ **Implemented and measured** (`04` §16): helps in 18 of 36 conditions, mean +0.0018, best +0.0303, and it converts the DTD/ResNet-18 `full` rolled-out regression into a gain. Reported as an ablation; the required table still classifies `ẑ_T`.
-- **Still outstanding: one pass of `04` with `FORCE_RETRAIN_STANDARD = True`.** `04` §6 writes `best_T{T}.pt` alongside `best.pt` and §7 records `best_val_accuracy_at_T` / `test_accuracy_sel_T`, so that `standard T=4` and `rollout T=4` are selected under the same criterion. The re-run loaded all 54 standard runs from Drive, so those columns are still absent from `run_metrics.csv`. The retrained numbers will now be reproducible but will not match the stored ones to the last digit, so report both when it is done. Rolled-out runs are unaffected (`t = k/T` is deterministic and batch order was already seeded).
-- **No paired CI / McNemar on the CLIP branch.** `05` reports `delta_vs_control` as a difference of means only; it has no equivalent of `04` §14. Given how much §14 changed the reading of the image branch, the CLIP branch's "loses to the control in 28 of 36 cells" deserves the same treatment before it is quoted as settled.
-- **No validation-selected `t*` on the CLIP branch either**, even though that is where overshoot is worst (all 6 curves peak early, up to +4.2 points). `04` §16 is image-branch only. This is the single highest-value missing measurement in the project.
-- The optional intermediate-flow-time comparison of samples against prototypes is done. Whether early stopping interacts with the standard-vs-rolled-out choice is answerable from `04` §16, which reports `t*` per variant: rolled-out models have the earlier `t*` and the larger gain from stopping, consistent with their weaker constraint.
-- Not yet attempted: re-normalizing each Euler state back onto the unit sphere. Both endpoints are unit-norm and the classifier is cosine, but the straight-line path passes through the interior of the ball, so `distance_to_true_prototype` mixes angular and radial movement. One ablation would settle whether it matters.
-- Follow-up the controls opened: on Aircraft/DINOv2 a plain `direct` MLP captures 97% of FM's gain, while `residual` captures most of FM's advantage over `direct` elsewhere. Isolating the time conditioning alone — `residual` plus a `t` input, nothing else — would say precisely what flow matching contributes beyond iterative shared-weight computation.
+- ~~No paired CI / McNemar on the CLIP branch.~~ **Implemented** as `05` §19, not yet run.
+- ~~No validation-selected `t*` on the CLIP branch.~~ **Implemented** as `05` §20, not yet run.
+- **The intervals are underpowered at `n=3`, and that is the main reason these results read as weak.** 33 of 72 cells cannot be called either way; on DTD it is 17 of 24. This is statistical resolution, not the FM layer: the two-sided t-multiplier at `n=3` is 4.30. `ref/stage_2.pdf` fixes the required protocol at Stage 1's 3 repetitions, so the fix is the §14b / §19b supplement rather than a change to the required table.
+- **Still outstanding: one pass of `04` with `FORCE_RETRAIN_STANDARD = True`.** `04` §6 writes `best_T{T}.pt` alongside `best.pt` and §7 records `best_val_accuracy_at_T` / `test_accuracy_sel_T`, so `standard T=4` and `rollout T=4` are selected under the same criterion. The last run loaded all 54 standard runs from Drive, so those columns are still absent. Retrained numbers will be reproducible but will not match the stored ones to the last digit — report both.
+- Not yet attempted: re-normalizing each Euler state back onto the unit sphere. Both endpoints are unit-norm and the classifier is cosine, but the straight-line path passes through the interior of the ball, so `distance_to_true_prototype` mixes angular and radial movement. Note that renormalizing only the *final* state is provably a no-op — cosine similarity is scale-invariant — so only per-step renormalization is worth testing, and it deviates from the specified integrator, so it would be an ablation.
+- Follow-up the controls opened, and now the most informative experiment left: on Aircraft/DINOv2 a plain `direct` MLP captures 97% of FM's gain, while `residual` captures most of FM's advantage over `direct` elsewhere. Isolating the time conditioning alone — `residual` plus a `t` input, nothing else — would say precisely what flow matching contributes beyond iterative shared-weight computation. If it is run, the §19 controls must be swept identically to whatever FM gets, or the comparison stops being fair.
+- The optional intermediate-flow-time comparison of samples against prototypes is done. Whether early stopping interacts with the standard-vs-rolled-out choice is answerable from `04` §16: rolled-out models have the earlier `t*` and the larger gain from stopping, consistent with their weaker constraint.
 - See `doc/STAGE2_COMPLIANCE.md` for the clause-by-clause map of `ref/stage_2.pdf` and the explicit list of additions that are *not* part of the required experiment.

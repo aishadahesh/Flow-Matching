@@ -108,7 +108,7 @@ Guards and reporting - no retraining needed, all post-hoc on artifacts already o
 - [x] **Prove** the K-shot subsets are Stage 1's, rather than asserting it in prose: rebuild each prototype from the re-derived subset with Stage 1's exact recipe and require agreement to `1e-5` (`04` §5b). Stage 1 never saved the indices, so reconstruction is the only available check.
 - [x] Prototype row-order and unit-norm assertions on both transport endpoints (`04` §5b; `05` already had the norm asserts in Section 6). Note `prototypes.pt['classes']` holds class *name strings*, so it cannot be compared against `arange` - the reconstruction check is what establishes ordering.
 - [x] `effective_repetitions` / `distinct_subsets` diagnostics ported from `05` into `04` §5b, so Flowers-102 `K=10` (all subset seeds select the same 1020 images; `K=10` *is* `K=full` there) is never read as low variance.
-- [x] Paired per-seed `ΔAcc` with 95% CIs plus McNemar on the shared test images (`04` §14), replacing difference-of-means. **Image branch only** - `05` has no equivalent section and still reports `delta_vs_control` as a difference of means. At `K=full` the Stage 1 prototype is a single deterministic run, so the spread there is FM initialization variance alone - stated in the table via `variance_source`.
+- [x] Paired per-seed `ΔAcc` with 95% CIs plus McNemar on the shared test images (`04` §14), replacing difference-of-means. Now on **both** branches - `05` §19 pairs against the K-shot control, with `05` §9 saving the per-run control predictions McNemar needs. `05` §19 is **written but not yet executed**. At `K=full` the Stage 1 prototype is a single deterministic run, so the spread there is FM initialization variance alone - stated in the table via `variance_source`.
 - [x] Error bars labelled explicitly (`±1 SD across Stage 1-matched repetitions`) on the accuracy-vs-K figure.
 - [x] Fixed/broken transition counts plus the pre-flow margin distribution of each group (`04` §15).
 - [ ] Training-curve figure should gain a validation-accuracy panel next to the loss panel (`04` §9) - the losses are different quantities on different scales, validation accuracy is what is actually comparable. **Not done**: §9 still plots `train_loss` only. `val_accuracy` is already in every `history.csv`, so this is a plotting change, not a re-run.
@@ -119,7 +119,7 @@ Guards and reporting - no retraining needed, all post-hoc on artifacts already o
 
 Ablations and controls - clearly separated from the required table:
 
-- [x] Validation-selected stopping time `t*` (`04` §16). Selected on validation only; the test-optimal `t` is reported as an unreachable bound. The required table still classifies `ẑ_T`. **Measured**: helps in 18 of 36 conditions, mean +0.0018, best +0.0303, and it turns the DTD/ResNet-18 `full` rolled-out regression (-.0206) into +.0097 over the baseline. **Image branch only** - not implemented in `05`, which is where overshoot is worst (all 6 curves peak early).
+- [x] Validation-selected stopping time `t*` (`04` §16). Selected on validation only; the test-optimal `t` is reported as an unreachable bound. The required table still classifies `ẑ_T`. **Measured**: helps in 18 of 36 conditions, mean +0.0018, best +0.0303, and it turns the DTD/ResNet-18 `full` rolled-out regression (-.0206) into +.0097 over the baseline. Now on **both** branches - `05` §20 ports it, and additionally reports `t*` against the K-shot control, since that is the like-for-like reference there. `05` §20 is **written but not yet executed**. This is where overshoot is worst: all 6 CLIP curves peak early, up to +4.2 points.
 - [x] Inference-step sweep `T ∈ {1,2,4,8,12}`, standard FM only (`04` §18). Required table keeps `{4,12}`.
 - [x] Quantitative geometry `W(t)`, `B(t)`, `W/B`, nearest-competitor similarity (`04` §17) - the spec's third goal answered with numbers, not only projections.
 - [x] Non-FM controls: direct MLP endpoint regression and repeated residual with no time conditioning, same architecture/optimizer/subsets/seeds, in a separate `controls/` tree (`04` §19). This is what decides whether the +24pt Aircraft/DINOv2 result is specific to flow matching.
@@ -131,12 +131,27 @@ Ablations and controls - clearly separated from the required table:
 - [x] Execute `04` top to bottom. **Done** - Sections 5b and 14-21 all ran; their numbers are now in `doc/RESULTS.md` under "Hardening, ablations and controls - measured".
 - [x] Train the control networks (`04` §19). **Done** - 108 control runs (`direct` and `residual`) written to `outputs/flow_matching/controls/`. Result: FM beats both controls in 16 of 18 settings, but on Aircraft/DINOv2 the plain `direct` MLP already delivers 97% of FM's gain over the baseline.
 - [x] Execute `05` §17-§19. **Done** - reverse flow, intermediate flow times and the animations all produced.
+- [ ] **Run `05` top to bottom** to execute the new §9 / §19 / §20. No FM retraining - §19 and §20 are post-hoc on saved checkpoints, and the control is closed form.
+- [ ] **`04` §6b with `RUN_ZERO_INIT_PILOT = True`** (~72 networks). Adopt zero-init only if the 3 regressions clear, the seed spread falls, and `mean_epochs` has not blown out against the early-stopping patience. Adoption means `zero_init_output = True`, one `FORCE_RETRAIN = True` pass, and rewriting every reported number.
+- [ ] **`04` §14b and `05` §19b with `RUN_EXTENDED = True`** (~380 and ~190 networks, minutes). The fix for the resolution problem: 33 of 72 cells are currently unresolvable at `n=3`, and intervals should narrow ~3.4× at `n=10`. The required tables stay at `n=3`.
 - [ ] **One pass with `FORCE_RETRAIN_STANDARD = True`** to populate the per-`T` selection columns (`best_val_accuracy_at_T`, `selected_epoch_at_T`, `test_accuracy_sel_T`). Still outstanding: the re-run loaded all 54 standard-FM runs from Drive, because the skip logic checks whether the output files exist rather than which config produced them, so no `best_T{T}.pt` was written. Retrained standard runs will not reproduce the stored numbers to the last digit - report both during the transition. Rolled-out runs are unaffected (`t = k/T` is deterministic and batch order was already seeded).
 
 Two facts from the run that close out earlier caveats:
 
 - `04` §7 printed `Result rows: 216 | runs that actually resumed from a checkpoint: 0`. No stored result was ever produced by a resumed run, so the pre-fix nondeterministic `t` sampling never affected any saved number. The "standard-FM numbers will shift" warning can be retired.
 - `04` §5b verified subset identity across **42** (dataset, encoder, K, seed) combinations at a maximum prototype-reconstruction drift of **0.00e+00**. The K-shot subsets are Stage 1's exactly.
+
+### Added 2026-08-24, not yet executed
+
+Five additions came out of reviewing why the results read as weak. The distinction between *coded* and *measured* is kept explicit here deliberately - documenting unrun analyses as findings is the mistake this file previously made.
+
+- `05` §9 saves per-run control predictions (blocker for §19's McNemar).
+- `05` §19 - paired ΔAcc vs the control, 95% CIs, McNemar.
+- `05` §20 - validation-selected `t*`, reported against the control as well as against `t=1`.
+- `04` §14b / `05` §19b - extended-repetition supplement, seeds 0-9, separate `extended/` tree.
+- `04` §6b - zero-init pilot. Verified locally that a zeroed output layer makes the rollout the exact identity (drift `0.00e+00`) at `T=4` and `T=12`; an untrained default-init field displaces a unit-norm feature by 0.54-0.86 in L2, which is the size of the problem it addresses.
+
+`build_report.py` now addresses notebook cells by content rather than by index, so inserting sections can no longer make the report silently parse the wrong table.
 
 ## Completion criteria
 
