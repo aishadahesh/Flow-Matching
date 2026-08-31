@@ -137,6 +137,23 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   each one, and what the probe's own logit margin was on them. A flow that rescues samples the probe
   was unsure about is behaving sensibly; one that breaks confidently-correct samples is not, and no
   aggregate would show it.
+- [x] **Translation versus transport** (Section 19b), added after the animation showed the cloud
+  appearing to slide bodily across the frame. A large *common* displacement is the cheapest way for
+  an FM in front of an affine classifier to buy accuracy: adding a fixed vector `m` to every feature
+  shifts the logits by `W m`, a per-class constant, which is exactly a re-fit of the classifier's
+  bias. The displacement is therefore split into a common translation and a per-sample residual and
+  each is scored alone (`shift_only`, `residual_only`), with `m` estimated on the training subset so
+  the control never sees test displacements. If `shift_only` recovers most of the gain, the result is
+  a bias correction a single vector could deliver and must be reported as such, not as flow matching
+  doing the work. Verified against synthetic fields: a pure translation is attributed entirely to
+  `shift_only`, a pure contraction entirely to `residual_only`.
+- [x] Record why direction relative to the class clusters is **not** evidence of a bug in Stage 3,
+  unlike Stage 2. Stage 2's flow had an explicit prototype target, so features visibly moved toward
+  their own class and anything else would have been wrong. Stage 3's objective is the frozen
+  classifier's logits, and nothing in it rewards staying near the class cloud or near `z`; a flow
+  that leaves the data manifold entirely is a valid minimum. The animation was separately verified
+  faithful - frame 0 asserted equal to `z`, the final frame asserted equal to the endpoint Section 10
+  scores, and cosine `+1.0` against a field with known constant velocity.
 - [x] **Per-class effects** (Section 20). Per-class accuracy before vs after as a scatter about the
   diagonal, plus the largest movers by name. Guards against a flat mean that hides equal numbers of
   helped and hurt classes.
@@ -174,7 +191,7 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:
 
 - **Unit/behaviour suite**, 58 checks over both feature transforms: probe loading, freezing, the fidelity and identity guards (including a negative control proving the identity guard has teeth), all four training variants, the resume path, gradient flow to a joint head and its absence from a frozen one, the bootstrap/McNemar helpers, and that the guidance target lowers classification loss under all three constraint modes. Plus a learnability check: against a deliberately undertrained frozen head, both strategies must beat epoch 0 - measured at validation .117 -> .433 and test .056 -> .300 for Strategy 1, .117 -> .383 / .278 for Strategy 2.
-- **Notebook integration run**: every one of the 33 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions. The animation frame plan is checked to cover every Euler step in order and end at `t=1`, and - since an identity field makes the videos static by construction - a non-identity field is confirmed to move features across the rollout, so a passing animation test is not vacuous.
+- **Notebook integration run**: every one of the 34 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions. The animation frame plan is checked to cover every Euler step in order and end at `t=1`, and - since an identity field makes the videos static by construction - a non-identity field is confirmed to move features across the rollout, so a passing animation test is not vacuous.
 - **Optional-analysis suite**, 40 checks over both feature transforms: both curve endpoints self-anchoring, displacement starting at exactly zero and never decreasing, `accuracy_by_step` agreeing with the full metrics table, `t*` never beating the test-curve oracle, every recovery rate inside [0,1], and an identity field round-tripping with exactly zero error and a flat accuracy curve. It also confirms the training margin rises (-0.23 -> 3.59) and training cross-entropy collapses (1.76 -> 0.11) while *test* accuracy falls - overfitting at K=10, which is what motivates the `t*` ablation.
 
 Three defects were found and fixed this way rather than on Colab: the missing epoch-0 checkpoint described in Section 5, the transform-dependent guidance step size described in Section 4, and float32-vs-float64 comparison against Stage 1's saved accuracies described in Section 1.

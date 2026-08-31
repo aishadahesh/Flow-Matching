@@ -699,6 +699,20 @@ probe's own logit margin was on them. A flow that rescues samples the probe was 
 is behaving sensibly; one that destroys confidently-correct predictions is not, and no aggregate
 would reveal it.
 
+**Translation versus transport.** Stage 2's flow moved features toward an explicit prototype, so
+direction was interpretable and a flow going elsewhere was a bug. Stage 3 has no target: the
+objective is the frozen classifier's logits, nothing rewards staying near the class cloud or near
+`z`, and a flow that leaves the data manifold entirely is a valid minimum. Direction relative to the
+class clusters therefore carries no diagnostic weight here, and reading it as one imports a Stage 2
+intuition that does not transfer.
+
+What does carry weight is *how much of the displacement is shared*. Adding a fixed vector `m` to
+every feature shifts the logits by `W m`, a per-class constant - which is a re-fit of the
+classifier's bias, obtainable without transporting anything per-sample. The displacement is split
+into that common translation and a per-sample residual, each scored alone, with `m` estimated on the
+training subset so the control never sees test displacements. A gain that the common shift reproduces
+is a bias correction and must be reported as one.
+
 **Per-class effects.** A flat mean can hide a flow that helps as many classes as it hurts. Per-class
 accuracy before versus after, plotted about the diagonal, separates those cases.
 
