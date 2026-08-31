@@ -66,11 +66,18 @@ enforce this before any training starts, and both raise rather than warn: the
 reloaded probe must reproduce its Stage 1 test accuracy to within 1e-6, and the
 untrained rollout must be the identity.
 
-The notebook also runs two variant sweeps and the optional joint-fine-tuning
-extension. All three are flag-gated at the top of their sections
-(`RUN_REGULARIZATION_SWEEP`, `RUN_GUIDANCE_SWEEP`, `RUN_JOINT_FINETUNE`), enabled by
-default. Completed runs are skipped by checking saved outputs on Drive; set
+Beyond the required grid the notebook runs two variant sweeps, the optional
+joint-fine-tuning extension (with a head-only control, without which that comparison
+cannot be read), and Stage 3 versions of Stage 2's two optional analyses — samples at
+intermediate flow times, with a validation-selected stopping time, and the flow in
+reverse. All are flag-gated at the top of their sections (`RUN_REGULARIZATION_SWEEP`,
+`RUN_GUIDANCE_SWEEP`, `RUN_JOINT_FINETUNE`, `RUN_TSTAR_ABLATION`, `RUN_REVERSE_FLOW`),
+enabled by default. Completed runs are skipped by checking saved outputs on Drive; set
 `FORCE_RETRAIN = True` to rerun the grid from scratch.
+
+The intermediate-flow-time curve is anchored at both ends and asserts it: identity
+initialization makes `t=0` accuracy exactly the Stage 1 linear probe, and `t=1` exactly
+the reported Stage 3 result, so the curve is ΔAcc unrolled.
 
 **Status: implemented, not yet measured.** The notebook has been verified to execute
 end to end against fabricated Stage 1 artifacts, but the Colab run over the real

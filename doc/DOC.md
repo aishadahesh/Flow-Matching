@@ -639,6 +639,51 @@ run that beats the Stage 1 probe may just be a probe that trained longer. A `hea
 continues the same head for the same budget under the same optimizer and selection rule, with no FM
 at all. Joint results are to be read against that control, not against Stage 1.
 
+## 32b. Stage 2's optional analyses, adapted to Stage 3
+
+`stage_2.pdf` ends by encouraging exploration of the learned flow in reverse, starting from the class
+prototypes, and comparison of samples and prototypes at intermediate flow times. Both were done for
+Stage 2. The Stage 3 versions ask related but different questions, because Stage 3 has no class
+prototypes: the flow's destination is a classifier, not a point.
+
+**Intermediate flow times** transfer directly. Every intermediate Euler state is classified through
+the frozen head over the complete test split, tracking accuracy, cross-entropy, the true-class logit
+margin, and relative displacement. The margin is the quantity to read - it moves continuously where
+accuracy moves in discrete jumps, and it distinguishes a flow that pushes samples across the decision
+boundary from one that merely pushes them deeper into the region they already occupied.
+
+The curve is **self-anchoring at both ends**, which is what makes it trustworthy and is stronger than
+the Stage 2 version. Identity initialization makes `z_hat_0 = z` exactly, so `t=0` accuracy *is* the
+Stage 1 linear probe, and `t=1` is the result reported in the required table. The notebook raises if
+either endpoint drifts. The curve is `ΔAcc` unrolled.
+
+The associated ablation stops the flow at a validation-selected `t*`. It is worth having here rather
+than being a Stage 2 leftover: Strategy 1 minimizes a classification loss on ten examples per class
+and has an obvious route to overfitting - on deliberately small fabricated data during development,
+training cross-entropy fell from 1.76 to 0.11 while test accuracy went down. `t*` is chosen on
+validation only. Ties break toward the earliest step, so a run whose FM stayed at the identity reports
+`t* = 0` from a flat curve; that is bookkeeping, not a finding.
+
+**Reverse flow** has to be restated, and two anchors are used because neither alone is conclusive.
+
+The first is the frozen classifier's own **class templates**: the head's weight rows `w_c`, which
+determine its decision entirely and live in the same space as `z`, rescaled to the mean feature norm
+before being integrated backward through a field that only ever saw features at that radius. Recovery
+is the fraction of classes whose reverse-flowed template lands nearest its own class's mean original
+feature. **The untouched template's recovery is a pre-transport reference, not a ceiling** - `w_c`
+need not sit inside its class's cloud, so moving it toward that cloud can legitimately improve
+recovery. This is exactly the error recorded as a correction to the Stage 2 write-up in `RESULTS.md`,
+and it is available to repeat here.
+
+The second is a **round trip on the class means**: forward-flow each class mean, integrate the result
+back, measure the relative error. This anchor has an unambiguous ideal of zero, so unlike recovery
+rates there is nothing to argue about, and an identity field scores exactly zero by construction.
+
+Neither is an exact inverse. The backward pass evaluates the field at `t` in {1, ..., 1/T} while the
+forward pass uses {0, ..., 1 - 1/T}, so they do not coincide even for a perfectly learned field, and a
+flow trained to make a classifier's job easier has every reason to be contractive - which is not
+invertible in principle. These recover a plausible pre-image, not the original point.
+
 ## 33. Stage 3 failure modes to prevent
 
 In addition to the Stage 1 and Stage 2 failure modes in sections 10 and 22:
@@ -662,6 +707,11 @@ In addition to the Stage 1 and Stage 2 failure modes in sections 10 and 22:
   cross-entropy, the other a velocity regression MSE.
 - Reporting the joint fine-tuning extension against the Stage 1 probe rather than against the
   head-only control.
+- Describing the untouched classifier template's recovery rate as a ceiling in the reverse-flow
+  analysis. It is a pre-transport reference; reverse flow can beat it, and Stage 2's write-up had to
+  be corrected for exactly this.
+- Reading `t* = 0` as evidence that the flow should be stopped immediately. For a run whose FM stayed
+  at the identity the accuracy curve is flat, and `argmax` returns the first index.
 
 ## 34. Stage 3 definition of done
 

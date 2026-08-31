@@ -2,7 +2,7 @@
 
 Source of truth: `ref/part_3.pdf`. Stage 3 inserts an FM transformation between the **frozen** image-encoder feature and the **frozen** Stage 1 linear probe: `z -> FM -> z_hat -> (W z_hat + b) -> s`. **Do not retrain the linear classifier for the required experiments, do not recompute Stage 1 features, and do not change the Stage 1 splits, subset seeds, or K.** The direct baseline is the Stage 1 linear probe on the same dataset, encoder, subset and seed - any deviation makes `ΔAcc` uninterpretable, exactly as in Stage 2.
 
-Status: **implemented and verified to run end to end; not yet measured on real data.** `06_fm_before_classifier.ipynb` executes all 20 code cells against a fabricated Stage 1 world (see `## Verification` below), but the Colab run over the real feature caches has not happened yet. No number in `doc/RESULTS.md` comes from Stage 3 so far.
+Status: **implemented and verified to run end to end; not yet measured on real data.** `06_fm_before_classifier.ipynb` executes all 25 code cells against a fabricated Stage 1 world (see `## Verification` below), but the Colab run over the real feature caches has not happened yet. No number in `doc/RESULTS.md` comes from Stage 3 so far.
 
 ## 0. Lock the Stage 3 experimental plan
 
@@ -81,7 +81,47 @@ The specification calls its two strategies "structured starting points rather th
 - [x] **Strategy 1 regularization** (Section 14, `RUN_REGULARIZATION_SWEEP`): unregularized vs. displacement penalty at 1e-2 and 1e-1 vs. velocity penalty at 1e-3, reporting accuracy *and* `relative_displacement` together, so the off-manifold hypothesis in Section 3 above is testable rather than rhetorical.
 - [x] **Strategy 2 guidance knobs** (Section 15, `RUN_GUIDANCE_SWEEP`): step size (0.02 / 0.1 / 0.30 of the feature norm), number of target-improvement steps (1 / 3 / 10), constraint mode (`trust_region` / `none` / `unit`), and refresh period (every epoch vs. every 10). One knob varied at a time from the default - these are the four choices the specification names.
 
-## 9. Optional extension - jointly fine-tuning the classifier
+## 9. Stage 2's optional analyses, adapted to Stage 3
+
+`ref/stage_2.pdf` ends with an optional invitation to explore the learned flow in reverse starting
+from the class prototypes, and to compare samples and prototypes at intermediate flow times. Both
+were done for Stage 2 (`04` §12-§13, measured in `RESULTS.md`). The Stage 3 versions are **not the
+same experiment**, because Stage 3 has no class prototypes - the flow's destination is a classifier,
+not a point.
+
+- [x] **Intermediate flow times** (Section 17). Classify every intermediate Euler state `z_hat_k`
+  through the frozen head over the complete test split, tracking accuracy, cross-entropy, logit
+  margin, and relative displacement. The margin is the informative one: it moves continuously where
+  accuracy moves in jumps, showing whether the flow pushes samples across the decision boundary or
+  merely deeper into the region they already occupied.
+- [x] **Anchor the curve at both ends and assert it.** Under identity initialization `z_hat_0 = z`
+  exactly, so `t=0` accuracy *is* the Stage 1 linear probe, and `t=1` is the Section 10 result. The
+  notebook raises if either endpoint drifts. The curve is `ΔAcc` unrolled.
+- [x] **Point-cloud snapshots** at `t` in {0, .25, .5, .75, 1} in a jointly-fit PCA per dataset with
+  shared axes, on the same class subset as Section 12.
+- [x] **Validation-selected stopping time `t*`** (Section 17c). `t*` is chosen on validation only;
+  the test curve is computed for reporting but the index was fixed before test was touched.
+  `oracle_best` is the price of choosing honestly. Ties break toward the earliest step, so an
+  identity-selected run reports `t* = 0` from a flat curve - documented so it is not misread as a
+  finding.
+- [x] **Reverse flow from two anchors** (Section 18), since there are no prototypes to start from:
+  - *classifier class templates* - the frozen head's weight rows `w_c`, rescaled to the mean feature
+    norm, integrated backward. Asks what feature the flow thinks maps toward each class direction.
+    The untouched template's recovery is the **pre-transport reference, not a ceiling**: `w_c` need
+    not sit inside its class cloud, so reverse flow can beat it. This is precisely the error
+    `RESULTS.md` records as a correction to the Stage 2 write-up, and it is available to repeat here.
+  - *a round trip on the class means* - forward-flow each class mean, integrate back, measure the
+    error. This anchor has an unambiguous ideal of zero, which the local test asserts for an identity
+    field, so it is the one to lean on when interpreting.
+- [x] Record the caveat in the notebook: the backward pass evaluates the field at `t` in
+  {1, ..., 1/T} while the forward pass uses {0, ..., 1-1/T}, so neither is an exact inverse even for
+  a perfectly learned field; and a flow trained to make a classifier's job easier has every reason to
+  be contractive, which is not invertible in principle. These recover a plausible pre-image, not the
+  original point.
+- [x] **Five-panel reverse strip** (Section 18b) showing where the templates travel, drawn over the
+  real test features.
+
+## 10. Optional extension - jointly fine-tuning the classifier
 
 - [x] After the frozen-classifier experiments, unfreeze the pretrained linear classifier and optimize it jointly with the FM, at its own smaller learning rate, with `unfreeze_epoch` available for delayed unfreezing. (Section 16, `RUN_JOINT_FINETUNE`.)
 - [x] **Add the control that makes the comparison interpretable.** Unfreezing adds two things at once - the FM *and* extra training of the classifier itself - so a joint run that beats the Stage 1 probe may simply be a probe that trained longer. A `head_only` control continues the same Stage 1 head for the same epoch budget under the same optimizer and the same validation-checkpointing rule, with no FM at all. **The number that means anything is joint versus that control, not joint versus Stage 1.** The specification does not ask for this control; without it the extension cannot support a claim.
@@ -91,7 +131,8 @@ The specification calls its two strategies "structured starting points rather th
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:
 
 - **Unit/behaviour suite**, 58 checks over both feature transforms: probe loading, freezing, the fidelity and identity guards (including a negative control proving the identity guard has teeth), all four training variants, the resume path, gradient flow to a joint head and its absence from a frozen one, the bootstrap/McNemar helpers, and that the guidance target lowers classification loss under all three constraint modes. Plus a learnability check: against a deliberately undertrained frozen head, both strategies must beat epoch 0 - measured at validation .117 -> .433 and test .056 -> .300 for Strategy 1, .117 -> .383 / .278 for Strategy 2.
-- **Notebook integration run**: every one of the 20 code cells parsed and executed against three fabricated datasets and three seeds, producing all 14 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none.
+- **Notebook integration run**: every one of the 25 code cells parsed and executed against three fabricated datasets and three seeds, producing all 21 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none.
+- **Optional-analysis suite**, 40 checks over both feature transforms: both curve endpoints self-anchoring, displacement starting at exactly zero and never decreasing, `accuracy_by_step` agreeing with the full metrics table, `t*` never beating the test-curve oracle, every recovery rate inside [0,1], and an identity field round-tripping with exactly zero error and a flat accuracy curve. It also confirms the training margin rises (-0.23 -> 3.59) and training cross-entropy collapses (1.76 -> 0.11) while *test* accuracy falls - overfitting at K=10, which is what motivates the `t*` ablation.
 
 Three defects were found and fixed this way rather than on Colab: the missing epoch-0 checkpoint described in Section 5, the transform-dependent guidance step size described in Section 4, and float32-vs-float64 comparison against Stage 1's saved accuracies described in Section 1.
 
@@ -101,4 +142,5 @@ Three defects were found and fixed this way rather than on Colab: the missing ep
 - [ ] Record the measured Stage 3 results in `doc/RESULTS.md`, including the epoch-0 count from Section 10 and the paired-significance summary from Section 13.
 - [ ] Report the two variant sweeps: whether the displacement penalty changes anything, and which guidance knobs matter.
 - [ ] Report the joint fine-tuning extension **against the `head_only` control**, not against the Stage 1 probe.
+- [ ] Report the two optional analyses: the accuracy/margin curves over flow time with both endpoints anchored, whether `t*` beats `t=1`, and the two reverse-flow anchors with the pre-transport reference stated correctly.
 - [ ] If Stage 3 turns out not to beat the linear probe, say so plainly and explain the mechanism. The Stage 2 precedent is the honest framing to follow: "the FM layer is a real improvement over the prototype rule it replaces, not a replacement for a discriminatively trained classifier." Stage 3 asks a harder question than Stage 2 did - the linear probe was already the strongest method in the project at every full-data setting, and a frozen affine classifier applied to a representation it was itself fit on leaves little obvious headroom.

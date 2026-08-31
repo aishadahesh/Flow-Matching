@@ -485,7 +485,16 @@ the run is wrong and must not be reported.
 
 Also to be reported: representative training and validation curves for both strategies; the joint
 PCA and joint t-SNE feature-space comparisons; per-cell paired bootstrap CIs and exact McNemar
-tests against the probe; the two variant sweeps; and the joint fine-tuning extension.
+tests against the probe; the two variant sweeps; the joint fine-tuning extension; and the two
+optional analyses carried over from Stage 2 - samples at intermediate flow times with a
+validation-selected stopping time, and the flow in reverse.
+
+The intermediate-flow-time curve is the one to lead with if the headline table is flat, because it
+is **anchored at both ends and the notebook asserts it**: identity initialization makes `t=0`
+accuracy exactly the linear probe and `t=1` exactly the Stage 3 number above, so the curve is ΔAcc
+unrolled and shows *where along the flow* anything happened. Read the logit margin alongside it -
+margin moves continuously where accuracy moves in jumps, so a flow that helps confidence without
+flipping predictions is visible there and nowhere else.
 
 ## Four things to state when the numbers arrive
 
@@ -524,6 +533,13 @@ Two Stage 2 findings transfer as cautions rather than predictions:
   classification loss through a rollout, which is a flexible nonlinear map trained on 10 examples per
   class; if it gains, "is this flow matching or just a nonlinear layer?" is the immediate follow-up
   and the write-up should anticipate it.
+- **The reverse-flow reference is not a ceiling.** Stage 3 has no class prototypes, so reverse flow
+  starts from the frozen classifier's own class templates and from a round trip on the class means.
+  For the templates, the untouched value is a *pre-transport reference*: `w_c` need not sit inside its
+  class's feature cloud, so reverse flow can legitimately beat it. `RESULTS.md` already carries a
+  correction for exactly this mistake in the Stage 2 write-up (see **Correction** above) - it would be
+  a poor showing to make it twice. The round-trip anchor is the safer one to lean on, because its
+  ideal is unambiguously zero.
 - **Displacement is a measured quantity, not an impression.** Every Stage 3 run records
   `||ẑ - z|| / ||z||` on the test split. A large gain with a large displacement, under the `l2`
   transform in particular, is the signature of the FM leaving the unit sphere the head was fit on and
