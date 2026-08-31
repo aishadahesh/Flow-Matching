@@ -2,7 +2,9 @@
 
 Source of truth: `ref/part_3.pdf`. Stage 3 inserts an FM transformation between the **frozen** image-encoder feature and the **frozen** Stage 1 linear probe: `z -> FM -> z_hat -> (W z_hat + b) -> s`. **Do not retrain the linear classifier for the required experiments, do not recompute Stage 1 features, and do not change the Stage 1 splits, subset seeds, or K.** The direct baseline is the Stage 1 linear probe on the same dataset, encoder, subset and seed - any deviation makes `ΔAcc` uninterpretable, exactly as in Stage 2.
 
-Status: **run once on Colab (2026-08-31); results not yet transcribed.** `06_fm_before_classifier.ipynb` completed end to end over the real Stage 1 feature caches and wrote its artifacts to `outputs/fm_before_classifier` on Drive. Those numbers have **not** been read into `doc/RESULTS.md` yet, so no figure in this repository's documentation is a measured Stage 3 result. The notebook has since gained the diagnostic sections in Section 11 below, which need a rerun to populate - the grid itself is cached and will not retrain.
+Status: **run on Colab (2026-08-31), including the diagnostic sections; results not yet transcribed.** `06_fm_before_classifier.ipynb` completed end to end over the real Stage 1 feature caches, and the committed notebook carries its outputs. Those numbers have **not** been read into `doc/RESULTS.md` yet, so no figure in this repository's prose is a measured Stage 3 result. Only the video section and the inline report postdate that run and still need one rerun; the grid is cached and will not retrain.
+
+**Before transcribing anything, resolve this:** the Stage 1 linear-probe baselines Stage 3 loaded from Drive are *not* the ones `doc/RESULTS.md` documents. Measured K=10 DINOv2 baselines were DTD .7167, Aircraft .5285, Flowers-102 .9935; `RESULTS.md` records .7181, .5096, .9932. The fidelity guard passed at ~2e-8, so Stage 3 faithfully reproduces whatever is on Drive now - which means the Stage 1 runs on Drive were regenerated after `RESULTS.md` was written. The Aircraft gap (+.019) is the same size as the entire Stage 3 end-to-end gain, so the two tables cannot be printed side by side until this is settled.
 
 ## 0. Lock the Stage 3 experimental plan
 
@@ -145,10 +147,22 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   which is the honest view of a paired comparison), a forest plot of every cell's bootstrap CI with
   McNemar significance marked, and the `ΔAcc` heatmap. The Section 10 bar chart is the least
   informative of the four and should not be the figure anyone quotes.
-- [x] **Inline report** (Section 24). Reloads every saved CSV and PNG from Drive and renders them in
+- [x] **The rollout as video** (Section 23). Two animations of the same `T`-step Euler rollout the
+  rest of the notebook reports: the whole test cloud moving from `z` to `ẑ` with a live accuracy
+  readout at each Euler state, and individual paths coloured by **outcome** rather than by class, so
+  a `fixed` path and a `broken` path appear in the same frame. MP4 via `ffmpeg` where available (it
+  is on Colab), animated GIF otherwise; both are saved and embedded inline. The dataset animated is
+  the one with the largest `|ΔAcc|`, ranked on the absolute value so a flow that clearly makes things
+  worse is just as likely to be shown.
+- [x] Two honesty constraints on that video, both stated on the figure: frames between Euler states
+  are **linear interpolation added only for legibility** - the model produces `T + 1` states and
+  nothing between them, the caption reports the true Euler step, and the accuracy readout changes
+  only at a real state; and the PCA is fit once over all states and held fixed, so points move
+  because the features move, not because the projection is being refitted per frame.
+- [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
   the notebook. This exists because the skip-if-already-saved logic means a rerun does not re-execute
   the plotting cells' upstream work, so on a resumed run the figures would otherwise not reappear -
-  only a list of filenames.
+  only a list of filenames. Animations are re-embedded as base64, which grows the saved `.ipynb` - noted in the section itself.
 
 ## 10. Optional extension - jointly fine-tuning the classifier
 
@@ -160,7 +174,7 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:
 
 - **Unit/behaviour suite**, 58 checks over both feature transforms: probe loading, freezing, the fidelity and identity guards (including a negative control proving the identity guard has teeth), all four training variants, the resume path, gradient flow to a joint head and its absence from a frozen one, the bootstrap/McNemar helpers, and that the guidance target lowers classification loss under all three constraint modes. Plus a learnability check: against a deliberately undertrained frozen head, both strategies must beat epoch 0 - measured at validation .117 -> .433 and test .056 -> .300 for Strategy 1, .117 -> .383 / .278 for Strategy 2.
-- **Notebook integration run**: every one of the 30 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions.
+- **Notebook integration run**: every one of the 33 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions. The animation frame plan is checked to cover every Euler step in order and end at `t=1`, and - since an identity field makes the videos static by construction - a non-identity field is confirmed to move features across the rollout, so a passing animation test is not vacuous.
 - **Optional-analysis suite**, 40 checks over both feature transforms: both curve endpoints self-anchoring, displacement starting at exactly zero and never decreasing, `accuracy_by_step` agreeing with the full metrics table, `t*` never beating the test-curve oracle, every recovery rate inside [0,1], and an identity field round-tripping with exactly zero error and a flat accuracy curve. It also confirms the training margin rises (-0.23 -> 3.59) and training cross-entropy collapses (1.76 -> 0.11) while *test* accuracy falls - overfitting at K=10, which is what motivates the `t*` ablation.
 
 Three defects were found and fixed this way rather than on Colab: the missing epoch-0 checkpoint described in Section 5, the transform-dependent guidance step size described in Section 4, and float32-vs-float64 comparison against Stage 1's saved accuracies described in Section 1.
@@ -168,7 +182,8 @@ Three defects were found and fixed this way rather than on Colab: the missing ep
 ## Open items
 
 - [x] ~~Run `06_fm_before_classifier.ipynb` end to end on Colab over the real Stage 1 caches.~~ Done 2026-08-31.
-- [ ] **Rerun to populate Sections 19-22 and 24**, which postdate that run. The grid is cached, so this retrains nothing.
+- [ ] **Rerun to populate Section 23 (video) and Section 25 (inline report)**, the only parts that postdate the run. The grid is cached, so this retrains nothing.
+- [ ] **Reconcile the Stage 1 baselines** between `doc/RESULTS.md` and the runs on Drive, per the note at the top of this file. Everything else waits on this, because ΔAcc is defined against those baselines.
 - [ ] **Transcribe the measured numbers into `doc/RESULTS.md`.** Until that happens the results exist only on Drive.
 - [ ] Record the measured Stage 3 results in `doc/RESULTS.md`, including the epoch-0 count from Section 10 and the paired-significance summary from Section 13.
 - [ ] Report the two variant sweeps: whether the displacement penalty changes anything, and which guidance knobs matter.

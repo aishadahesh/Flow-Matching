@@ -713,7 +713,17 @@ cell's bootstrap confidence interval with McNemar significance marked, and a `Δ
 paired slope plot is the honest view of a paired comparison; the grouped bar chart in the required
 table's figure is the least informative of the four and should not be the one quoted.
 
-**An inline report** reloads every saved table and figure from disk and renders them in the
+**The rollout as video.** The same Euler states the rest of the stage reports, animated: the test
+cloud flowing from `z` to `ẑ` with the frozen classifier's accuracy printed at each state, and
+individual paths coloured by outcome so a rescued and a destroyed prediction appear together. Two
+constraints keep it honest and are stated on the figure. Frames between Euler states are linear
+interpolation added purely for legibility - the model produces `T + 1` states and nothing between
+them, so the caption reports the true step and the accuracy readout changes only at a real state.
+And the projection is fit once over every state and held fixed, so motion on screen is motion in
+feature space rather than a projection being refitted per frame. A video whose PCA moved with the
+data would be persuasive and meaningless.
+
+**An inline report** reloads every saved table, figure and animation from disk and renders them in the
 notebook. This is not redundancy: the skip-if-already-saved convention means a rerun does not
 re-execute the cells that produced the figures, so on a resumed run the notebook would otherwise show
 only a list of filenames.

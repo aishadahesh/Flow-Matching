@@ -82,12 +82,16 @@ the reported Stage 3 result, so the curve is ΔAcc unrolled.
 Sections 19-22 are diagnostics for reading a small or flat ΔAcc: which predictions the
 flow fixed versus broke and what distinguishes those groups, per-class effects, flow
 trajectories chosen by outcome, and an effect-size panel with paired slopes and
-bootstrap CIs. Section 24 reloads every saved CSV and figure from Drive and renders
-them inline as one report — useful on a rerun, where the cached grid means the earlier
-plotting cells do not re-execute.
+bootstrap CIs. Section 23 renders the rollout as video — the test cloud flowing from
+`z` to `ẑ` with a live accuracy readout, and individual paths coloured by outcome so a
+fixed and a broken path sit in the same frame. MP4 where ffmpeg is available, GIF
+otherwise. Section 25 reloads every saved table, figure and animation from Drive and
+renders them inline as one report — useful on a rerun, where the cached grid means the
+earlier plotting cells do not re-execute.
 
-**Status: run once on Colab (2026-08-31); numbers not yet transcribed into
-`doc/RESULTS.md`.** Sections 19-22 and 24 postdate that run and need a rerun to
+**Status: run on Colab (2026-08-31); the committed notebook carries its outputs, but
+the numbers are not yet transcribed into `doc/RESULTS.md`, and the Stage 1 baselines
+on Drive disagree with the Stage 1 table there — see `doc/TODO_stage3.md`.** Sections 23 and 25 postdate that run and need a rerun to
 populate; the grid is cached, so nothing retrains.
 
 Protocol is documented in `doc/DOC.md` Part III; task tracking in
