@@ -1,14 +1,20 @@
-# Results - Stage 1 and Stage 2
+# Results - Stages 1, 2 and 3
 
 Top-1 accuracy on the complete official test split, every number traced to a saved `metrics.json` / `run_metrics.csv`. 5-shot and 10-shot are mean ± std over subset seeds {0,1,2}; `full` is mean ± std over initialization seeds {0,1,2} for trained methods and a single run for the closed-form image prototypes.
 
 Three baselines were built in Stage 1. Stage 2 adds a flow-matching layer to one of them.
 
-| | Model | Stage 1 | Stage 2 |
-|---|---|---|---|
-| 1 | Linear probe | done | not applicable (this is the Stage 3 reference) |
-| 2 | Image-derived class prototypes | done | **done** - `04_flow_matching.ipynb` |
-| 3 | Zero-shot CLIP RN50 text prototypes | done | **done** - `05_flow_matching_clip.ipynb` |
+| | Model | Stage 1 | Stage 2 | Stage 3 |
+|---|---|---|---|---|
+| 1 | Linear probe | done | not applicable | **implemented, not yet measured** - `06_fm_before_classifier.ipynb` |
+| 2 | Image-derived class prototypes | done | **done** - `04_flow_matching.ipynb` | not applicable |
+| 3 | Zero-shot CLIP RN50 text prototypes | done | **done** - `05_flow_matching_clip.ipynb` | not applicable |
+
+Stage 3 puts the FM layer in front of the frozen Stage 1 linear probe, so the linear probe stops
+being only a reference point and becomes the thing being improved on. Its notebook runs end to end
+against fabricated Stage 1 artifacts but has not been run on the real feature caches; **every number
+in this file is still Stage 1 or Stage 2**. The Stage 3 section at the end records what will be
+filled in and what to be careful about when reading it.
 
 ---
 
@@ -449,3 +455,81 @@ The separate `04` pass with `FORCE_RETRAIN_STANDARD = True` is also still outsta
 - Follow-up the controls opened, and now the most informative experiment left: on Aircraft/DINOv2 a plain `direct` MLP captures 97% of FM's gain, while `residual` captures most of FM's advantage over `direct` elsewhere. Isolating the time conditioning alone — `residual` plus a `t` input, nothing else — would say precisely what flow matching contributes beyond iterative shared-weight computation. If it is run, the §19 controls must be swept identically to whatever FM gets, or the comparison stops being fair.
 - The optional intermediate-flow-time comparison of samples against prototypes is done. Whether early stopping interacts with the standard-vs-rolled-out choice is answerable from `04` §16: rolled-out models have the earlier `t*` and the larger gain from stopping, consistent with their weaker constraint.
 - See `doc/STAGE2_COMPLIANCE.md` for the clause-by-clause map of `ref/stage_2.pdf` and the explicit list of additions that are *not* part of the required experiment.
+
+---
+
+# Stage 3 - FM before the frozen linear classifier
+
+**Not yet measured.** `06_fm_before_classifier.ipynb` is implemented and verified to execute end to
+end against fabricated Stage 1 artifacts, but it has not been run on the real feature caches. This
+section records what will go here and what to be careful about when reading it, so the table is not
+written up carelessly once the run finishes.
+
+## What will be reported
+
+Top-1 test accuracy on the complete official test split for three methods on each of DTD,
+FGVC-Aircraft and Flowers-102, all on DINOv2 ViT-S/14 at K=10 with T=12, mean ± std over Stage 1's
+subset seeds {0, 1, 2}:
+
+| Dataset | Stage 1 linear probe | End-to-end rollout | ΔAcc | Classifier-guided | ΔAcc |
+|---|---|---|---|---|---|
+| DTD | .7181 ± .0111 | *pending* | | *pending* | |
+| Aircraft | .5096 ± .0138 | *pending* | | *pending* | |
+| Flowers-102 | .9932 ± .0000 | *pending* | | *pending* | |
+
+The linear-probe column is not pending - those are the measured Stage 1 K=10 DINOv2 numbers from the
+table at the top of this file, and Stage 3 loads exactly those trained heads rather than retraining
+them. Two guards in the notebook assert that the reloaded probe reproduces its saved test accuracy
+before any FM is trained, so if the Stage 3 baseline column ever disagrees with the Stage 1 table,
+the run is wrong and must not be reported.
+
+Also to be reported: representative training and validation curves for both strategies; the joint
+PCA and joint t-SNE feature-space comparisons; per-cell paired bootstrap CIs and exact McNemar
+tests against the probe; the two variant sweeps; and the joint fine-tuning extension.
+
+## Four things to state when the numbers arrive
+
+**1. Validation ΔAcc is meaningless here; only test ΔAcc counts.** The FM is initialized to the exact
+identity, and epoch 0 is checkpointed like any other epoch, so the selected checkpoint can never have
+worse validation accuracy than the linear probe. Validation ΔAcc ≥ 0 is a property of the selection
+rule, not a finding. Quoting it as evidence would be a straightforward error.
+
+**2. Report how many of the 18 runs selected epoch 0.** Those FM layers are the identity map - they
+learned nothing usable, and the system is exactly the linear probe. A mean that silently includes
+them reads as "a small consistent gain" when the real finding may be "it helped on 4 of 18 and did
+nothing on the rest". The notebook prints the count and lists the runs.
+
+**3. Flowers-102 K=10 has one effective subset, not three.** The official train split is exactly 1020
+images, 10 per class, so all three subset seeds select the identical set and `init_seed` is fixed at
+0. Its `std = .0000` is by construction. This already caught out the Stage 2 write-up and applies
+unchanged here.
+
+**4. The joint fine-tuning extension must be read against its `head_only` control.** Unfreezing the
+classifier adds the FM *and* extra classifier training simultaneously. The control continues the same
+head for the same budget with no FM at all, and it is the only honest comparison. Joint-vs-Stage-1
+would attribute the control's gain to flow matching.
+
+## What the Stage 2 results predict
+
+Stage 3 is a harder ask than Stage 2 and the existing measurements say so. Stage 2 improved on a
+closed-form prototype rule and still did not surpass the linear probe in any setting where the probe
+led - it closed a median 59% of the gap. Stage 3 targets that probe directly, and asks a *frozen*
+affine classifier to do better on a representation it was itself fit on. On DINOv2 at K=10 the probe
+is already at .7181 / .5096 / .9932, and Flowers-102 has essentially no headroom at all.
+
+Two Stage 2 findings transfer as cautions rather than predictions:
+
+- **The control question from `04` §19 applies here too.** On Stage 2's largest-gain setting, a plain
+  supervised MLP with no flow reached 97% of the FM gain. Stage 3's Strategy 1 backpropagates a
+  classification loss through a rollout, which is a flexible nonlinear map trained on 10 examples per
+  class; if it gains, "is this flow matching or just a nonlinear layer?" is the immediate follow-up
+  and the write-up should anticipate it.
+- **Displacement is a measured quantity, not an impression.** Every Stage 3 run records
+  `||ẑ - z|| / ||z||` on the test split. A large gain with a large displacement, under the `l2`
+  transform in particular, is the signature of the FM leaving the unit sphere the head was fit on and
+  exploiting the classifier off-manifold rather than improving the representation. Section 14's
+  regularization sweep exists to test that, and its result belongs next to the headline table.
+
+A negative or flat result is a legitimate outcome and should be reported plainly with the mechanism,
+following the Stage 2 precedent. What would be a genuine problem is a *positive* ΔAcc obtained
+against a mis-reconstructed baseline, which is what the two guards exist to prevent.

@@ -1,8 +1,10 @@
-# Project Documentation - Stages 1 and 2
+# Project Documentation - Stages 1, 2 and 3
 
-This document covers the protocol for both completed stages. **Part I** is Stage 1: classification baselines on frozen pretrained encoders, with no Flow Matching component. **Part II** is Stage 2: the Flow Matching layer added on top of the selected prototype baseline.
+This document covers the protocol for all three stages. **Part I** is Stage 1: classification baselines on frozen pretrained encoders, with no Flow Matching component. **Part II** is Stage 2: the Flow Matching layer added on top of the selected prototype baseline. **Part III** is Stage 3: a Flow Matching transformation inserted *before* the frozen Stage 1 linear classifier.
 
-Measured results and their discussion are in `RESULTS.md`. Per-stage task tracking is in `TODO_stage1.md` and `TODO_stage2.md`.
+Stages 1 and 2 are measured. Stage 3 is implemented and verified to run, but has not yet been run on the real feature caches - no Stage 3 number exists yet.
+
+Measured results and their discussion are in `RESULTS.md`. Per-stage task tracking is in `TODO_stage1.md`, `TODO_stage2.md` and `TODO_stage3.md`.
 
 ---
 
@@ -446,3 +448,240 @@ Stage 2 is done when:
 Measured outcomes against these criteria are in `RESULTS.md`; remaining open items are tracked in `TODO_stage2.md`.
 
 All five criteria are met. Two results from the non-required analyses have to travel with the required table rather than be filed separately, because they change what it may be claimed to show: the paired 95% CI excludes zero in 48 of 72 cells (24/24 Aircraft, 7/24 DTD, 17/24 Flowers-102), although 8 Flowers-102 K=10 intervals are degenerate because there is only one effective subset; excluding those leaves 40 non-degenerate effects. On the largest-gain setting (Aircraft/DINOv2), a plain supervised MLP with no flow reaches 97% of the FM gain over the baseline. `STAGE2_COMPLIANCE.md` maps every specification clause to where it is satisfied and lists everything that is deliberately *not* part of the required experiment.
+
+---
+
+# Part III - Stage 3: FM Before a Linear Classifier
+
+## 24. Stage 3 goal
+
+Stage 3 starts from the Stage 1 linear-probe setting and inserts an FM transformation *before* the
+pretrained linear classifier:
+
+```
+z --FM--> z_hat --frozen linear classifier--> s
+```
+
+where `z` is the frozen image-encoder feature, `z_hat` the feature after the FM transformation, and
+`s` the vector of classifier logits. The linear classifier is trained first, exactly as in Stage 1,
+and then kept frozen. The FM is initialized close to the identity, so that before Stage 3 training
+the complete system behaves like the original linear probe.
+
+The question is whether FM can transform the frozen encoder features into a representation that is
+better handled by the *existing* classifier - not by a better classifier.
+
+This is a harder question than Stage 2 asked. Stage 2 replaced a closed-form prototype rule, which
+had obvious headroom; the measured result was that the FM layer closed a median 59% of the gap to
+the linear probe without surpassing it. Stage 3 targets that probe itself, which `RESULTS.md`
+records as the strongest method in the project at every full-data setting except saturated
+Flowers-102/DINOv2. There is no reason to expect a large gain, and the honest framing is set out in
+section 34.
+
+## 25. What must be inherited unchanged
+
+From Stage 1: the official train/validation/test splits, the cached frozen features, the seeded
+K-shot subset selection, the trained linear head, and the feature transform that head expects.
+
+From Stage 2: the velocity network architecture, the Euler integrator
+`z_hat_{k+1} = z_hat_k + (1/T) v(z_hat_k, k/T)`, the checkpoint-resume convention, and the
+deterministic per-batch sampling of the flow time `t`.
+
+Nothing is recomputed. `06_fm_before_classifier.ipynb` imports neither `torchvision` nor an encoder,
+and it never calls the Stage 1 training routine.
+
+## 26. The frozen classifier and the space the FM operates in
+
+This is the detail most likely to be got wrong, and it has no analogue in Stage 2.
+
+Stage 1 selected a feature transform per run - `l2` or `standardize` - by validation accuracy, and
+trained the linear head on *transformed* features. The head therefore lives in the transformed
+space, and the `z` in the Stage 3 diagram is a transformed feature, not a raw encoder output. The FM
+operates entirely inside the classifier's own input space.
+
+Reproducing that space requires the transform mode and, for `standardize`, the mean and standard
+deviation computed on the K-shot training subset. Those statistics are saved in Stage 1's
+`checkpoints/final.pt` and **not** in `best_linear_head.pt`, so `final.pt` is the artifact to load
+even though both carry the same validation-selected weights.
+
+Two guards protect this, and they are the reason a wrong reconstruction cannot be mistaken for a
+Stage 3 result:
+
+- The transform statistics are recomputed from the re-derived subset and compared against Stage 1's
+  saved ones.
+- The complete Stage 1 inference path - cache, subset, transform, head - is replayed on the test
+  split and required to reproduce Stage 1's saved `test_accuracy` to within `1e-6`, for every
+  (dataset, seed) cell, before anything is trained.
+
+The tolerance is not decoration. Stage 1 stored accuracies as float32 means, so an exact comparison
+against a float64 recomputation fails by roughly `1e-8` even when everything is correct.
+
+## 27. Identity initialization, and what it costs
+
+The specification asks for an FM initialized close to the identity. Zeroing the velocity network's
+output layer makes `v(z, t) = 0` everywhere, so each Euler step adds exactly zero and the rollout is
+the identity map bit for bit. The system does not start *close* to the linear probe; it starts *at*
+it. This reuses the `zero_init_output` flag that existed in Stage 2 as a never-run pilot (`04` 6b).
+
+Two consequences follow, and both must be stated wherever Stage 3 results appear.
+
+**Optimization.** At initialization the gradient reaches only the output layer, because every
+earlier layer's gradient is multiplied by the zeroed output weights; the hidden layers unblock after
+the first update. This is standard zero-initialized-residual-branch behaviour, and it makes the
+first several epochs nearly flat. Stage 3 therefore raises `early_stopping_patience` from Stage 2's
+25 to 40 and `lr_patience` from 10 to 15. With Stage 2's values a run could stop before leaving the
+identity.
+
+**Model selection.** Epoch 0 - the untrained, identity FM - is evaluated and checkpointed like any
+other epoch. Because that state *is* the linear probe, the selection rule becomes "keep the FM only
+if it helps on validation". The price is that **validation `ΔAcc` is `>= 0` by construction and
+therefore carries no information**; only test `ΔAcc` does. A run whose selected checkpoint is epoch 0
+learned nothing usable, and the count of such runs is reported rather than absorbed into a mean.
+
+## 28. Strategy 1 - end-to-end rolled-out classification training
+
+For each training feature `z`, run the complete `T`-step rollout to obtain `z_hat`, pass `z_hat`
+through the frozen classifier, and minimize
+
+```
+L = CE(W z_hat + b, y)  +  lambda_disp * ||z_hat - z||^2  +  (lambda_vel / T) * sum_k ||v(z_k, t_k)||^2
+```
+
+backpropagating through all `T` sequential steps and updating only the FM parameters. Both penalty
+weights default to zero, so the required main result is the unregularized objective.
+
+The penalties are not decoration either. When Stage 1 selected the `l2` transform, the head was only
+ever fit on unit-norm features. An unregularized rollout is free to move `z_hat` off that sphere into
+regions where the head was never fit and its logits are unconstrained - so the FM can win training
+accuracy by exploiting the classifier rather than by improving the representation. Penalizing
+displacement is the direct guard. Whether this actually happens is measured in the notebook's
+Section 14, which reports accuracy and mean `||z_hat - z|| / ||z||` side by side, rather than argued.
+
+## 29. Strategy 2 - classifier-guided targets and standard FM training
+
+The frozen classifier is used to construct an explicit target, and the FM is then trained by ordinary
+conditional flow matching. For each training feature `z`:
+
+1. run `z` through the current FM to obtain `z_hat`;
+2. pass `z_hat` through the frozen classifier and compute the classification loss;
+3. take one or more gradient steps of that loss **with respect to `z_hat`** - in feature space, never
+   in parameter space - to reach a nearby improved representation `z_hat'`;
+4. treat `z` as the source and `z_hat'` as the target;
+5. perform a standard FM update between them: `t ~ U(0,1)`, `z_t = (1-t) z + t z_hat'`, target
+   velocity `z_hat' - z`, loss `||v(z_t, t) - (z_hat' - z)||^2`;
+6. recompute the targets as the FM changes during training.
+
+The scheme is bootstrapped: each refresh moves the target a little further downhill in classifier
+loss and the FM chases it. Nothing pins the target to a fixed endpoint the way Stage 2's class
+prototypes did, which is why the step constraint carries real weight here.
+
+**The step size is a fraction of the mean training-feature norm, not an absolute distance.** Because
+Stage 1 chooses the transform per run, an absolute step of 0.5 would be a 50% displacement under
+`l2` (`||z|| = 1`) but roughly 2.5% under `standardize` (`||z|| ~ sqrt(384)`). One configured number
+has to mean the same thing across datasets, so it is expressed relatively.
+
+All three constraint modes the specification names are implemented, defaulting to `trust_region`:
+
+| mode | behaviour | trade-off |
+|---|---|---|
+| `none` | `z_hat' = z_hat - eps * grad` | already-confident samples take naturally small steps, which is desirable, but raw gradient norms vary by orders of magnitude across samples |
+| `unit` | each step has length exactly `eps` | scale-free, but moves already-correct samples as far as wrong ones |
+| `trust_region` | raw steps, cumulative displacement clipped to `eps` | keeps the gradient's own scaling while capping the worst case |
+
+## 30. Stage 3 experimental protocol
+
+| | |
+|---|---|
+| Datasets | DTD, FGVC-Aircraft, Flowers-102 |
+| Encoder | DINOv2 ViT-S/14 on every dataset (384-dim) |
+| Training-set size | K = 10 |
+| Euler steps | T = 12, fixed for training and inference in every method |
+| Repetitions | Stage 1's subset seeds {0, 1, 2}, `init_seed = 0` |
+| Methods compared | Stage 1 linear probe, end-to-end rollout, classifier-guided |
+
+18 trained FM layers, plus 9 linear-probe baseline rows loaded from Stage 1 at zero training cost.
+
+The specification asks for two datasets and one representative encoder per dataset. All three Stage 1
+datasets are run because the extra cost is small and it keeps the Stage 3 table directly comparable
+to the Stage 1 and Stage 2 tables; Flowers-102 doubles as a near-saturated control. DINOv2 is the
+representative encoder everywhere because Stage 2 measured that encoder choice dominates every other
+factor by +.14 to +.31 over ResNet-18.
+
+Both strategies are checkpointed on the **same** quantity - validation top-1 accuracy of the complete
+system `head(rollout(z_val))` - which is also the rule Stage 1 used to select the linear probe.
+Selecting each method on its own training loss would compare a well-tuned method against a
+badly-tuned one, since the two objectives are not commensurable.
+
+## 31. Required outputs
+
+- **Classification results.** Top-1 test accuracy for the linear probe and both Stage 3 methods on
+  every dataset, mean +/- std over the three subset seeds, with `ΔAcc` against the matching probe.
+  The comparison is paired at the seed level, so `ΔAcc` is a mean of per-seed differences rather
+  than a difference of means computed over different data.
+- **Training behaviour.** Representative training and validation curves for both methods.
+- **Feature-space visualization.** Original `z` and transported `z_hat` under both methods, on the
+  same test examples with the same class colors, with the 2D embedding fit jointly over all three
+  feature sets and the panels sharing axis limits. Both PCA and t-SNE.
+- **Paired significance** (house convention, beyond the specification): a percentile bootstrap CI
+  over test examples and an exact McNemar test on the discordant pairs, per (dataset, method, seed).
+
+## 32. Variant comparisons and the optional extension
+
+The specification describes its two strategies as "structured starting points rather than fixed
+recipes". Two sweeps, both on subset seed 0 only, so they supplement rather than replace the
+three-seed result: the Strategy 1 regularization weights, reported jointly with the measured
+displacement; and the four Strategy 2 knobs the specification names - step size, number of
+target-improvement steps, constraint mode, and refresh period.
+
+The optional extension unfreezes the classifier and optimizes it jointly with the FM. **It ships
+with a control the specification does not ask for, because without it the comparison cannot support
+a claim:** unfreezing adds the FM *and* extra training of the classifier at the same time, so a joint
+run that beats the Stage 1 probe may just be a probe that trained longer. A `head_only` control
+continues the same head for the same budget under the same optimizer and selection rule, with no FM
+at all. Joint results are to be read against that control, not against Stage 1.
+
+## 33. Stage 3 failure modes to prevent
+
+In addition to the Stage 1 and Stage 2 failure modes in sections 10 and 22:
+
+- Running the FM on raw encoder features when the frozen head was trained on transformed ones. The
+  system would still run and produce plausible-looking numbers against a baseline that is not the
+  Stage 1 probe.
+- Loading `best_linear_head.pt` and reconstructing the `standardize` statistics from the wrong data,
+  instead of loading `final.pt` where Stage 1 saved them.
+- Comparing a replayed accuracy to Stage 1's saved value with exact equality. It will fail by about
+  `1e-8` for correct code, because Stage 1 stored float32 means.
+- Letting any gradient reach the classifier in the required experiments. Freezing at load time with
+  `requires_grad_(False)` makes this structurally impossible rather than a matter of discipline.
+- Quoting validation `ΔAcc` as evidence that Stage 3 helped. Epoch-0 checkpointing makes it
+  non-negative by construction; only test `ΔAcc` is informative.
+- Averaging away runs that selected epoch 0. Those FM layers are the identity and learned nothing;
+  reporting the count is part of reporting the result.
+- Reading a rising Strategy 2 training loss as divergence. The target moves at every refresh, so the
+  loss is measured against a different quantity than it was an epoch earlier.
+- Comparing Strategy 1 and Strategy 2 training losses by magnitude. One is a classification
+  cross-entropy, the other a velocity regression MSE.
+- Reporting the joint fine-tuning extension against the Stage 1 probe rather than against the
+  head-only control.
+
+## 34. Stage 3 definition of done
+
+Stage 3 is done when:
+
+- the required grid has been trained and evaluated on the identical Stage 1 splits, subsets, seeds
+  and frozen classifiers, with both guards in section 26 passing;
+- top-1 test accuracy and `ΔAcc` against the matching linear probe are reported for both methods on
+  every dataset, together with the count of runs that selected epoch 0;
+- training/validation curves and the jointly-embedded feature-space visualizations are complete;
+- the two variant sweeps are reported; and
+- the joint fine-tuning extension is reported against its head-only control.
+
+**A negative result is a result.** The linear probe is the strongest method in this project, and
+Stage 3 asks a frozen affine classifier to do better on a representation it was itself fit on. If
+the FM layer does not beat it, that should be stated plainly with the mechanism explained, following
+the Stage 2 precedent: "the FM layer is a real improvement over the prototype rule it replaces, not a
+replacement for a discriminatively trained classifier." What would make the finding uninterpretable
+is not a negative `ΔAcc` - it is a positive one obtained against a mis-reconstructed baseline, which
+is what sections 26 and 27 exist to prevent.
+
+Measured outcomes against these criteria will be recorded in `RESULTS.md`; remaining open items are
+tracked in `TODO_stage3.md`.
