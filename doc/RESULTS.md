@@ -460,10 +460,13 @@ The separate `04` pass with `FORCE_RETRAIN_STANDARD = True` is also still outsta
 
 # Stage 3 - FM before the frozen linear classifier
 
-**Not yet measured.** `06_fm_before_classifier.ipynb` is implemented and verified to execute end to
-end against fabricated Stage 1 artifacts, but it has not been run on the real feature caches. This
-section records what will go here and what to be careful about when reading it, so the table is not
-written up carelessly once the run finishes.
+**Run, not yet transcribed.** `06_fm_before_classifier.ipynb` completed end to end on Colab on
+2026-08-31 and wrote its artifacts to `outputs/fm_before_classifier` on Drive. Those numbers have not
+been read into this file, so **nothing below is a measured Stage 3 result yet** - this section still
+records what goes here and what to be careful about when reading it.
+
+The notebook has since gained diagnostic Sections 19-22 and the inline report in Section 24, which
+postdate that run. Rerunning populates them without retraining anything: the grid is cached.
 
 ## What will be reported
 
@@ -496,24 +499,31 @@ unrolled and shows *where along the flow* anything happened. Read the logit marg
 margin moves continuously where accuracy moves in jumps, so a flow that helps confidence without
 flipping predictions is visible there and nowhere else.
 
-## Four things to state when the numbers arrive
+## Five things to state when the numbers arrive
 
 **1. Validation ΔAcc is meaningless here; only test ΔAcc counts.** The FM is initialized to the exact
 identity, and epoch 0 is checkpointed like any other epoch, so the selected checkpoint can never have
 worse validation accuracy than the linear probe. Validation ΔAcc ≥ 0 is a property of the selection
 rule, not a finding. Quoting it as evidence would be a straightforward error.
 
-**2. Report how many of the 18 runs selected epoch 0.** Those FM layers are the identity map - they
+**2. Lead with the fixed/broken breakdown, not the mean.** Section 19 sorts every test sample into
+`fixed`, `broken`, `both_right`, `both_wrong`. `fixed − broken` is exactly the numerator of ΔAcc, and
+`fixed + broken` is the churn underneath it. A ΔAcc of +.004 produced by "fixed 8, broke 0" is a
+different finding from the same +.004 produced by "fixed 200, broke 192", and only the breakdown
+distinguishes them. Section 19's other two panels then say whether the broken samples were ones the
+probe had been confident about — which would be the most important thing on the page.
+
+**3. Report how many of the 18 runs selected epoch 0.** Those FM layers are the identity map - they
 learned nothing usable, and the system is exactly the linear probe. A mean that silently includes
 them reads as "a small consistent gain" when the real finding may be "it helped on 4 of 18 and did
 nothing on the rest". The notebook prints the count and lists the runs.
 
-**3. Flowers-102 K=10 has one effective subset, not three.** The official train split is exactly 1020
+**4. Flowers-102 K=10 has one effective subset, not three.** The official train split is exactly 1020
 images, 10 per class, so all three subset seeds select the identical set and `init_seed` is fixed at
 0. Its `std = .0000` is by construction. This already caught out the Stage 2 write-up and applies
 unchanged here.
 
-**4. The joint fine-tuning extension must be read against its `head_only` control.** Unfreezing the
+**5. The joint fine-tuning extension must be read against its `head_only` control.** Unfreezing the
 classifier adds the FM *and* extra classifier training simultaneously. The control continues the same
 head for the same budget with no FM at all, and it is the only honest comparison. Joint-vs-Stage-1
 would attribute the control's gain to flow matching.

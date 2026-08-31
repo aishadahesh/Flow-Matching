@@ -2,7 +2,7 @@
 
 Source of truth: `ref/part_3.pdf`. Stage 3 inserts an FM transformation between the **frozen** image-encoder feature and the **frozen** Stage 1 linear probe: `z -> FM -> z_hat -> (W z_hat + b) -> s`. **Do not retrain the linear classifier for the required experiments, do not recompute Stage 1 features, and do not change the Stage 1 splits, subset seeds, or K.** The direct baseline is the Stage 1 linear probe on the same dataset, encoder, subset and seed - any deviation makes `ΔAcc` uninterpretable, exactly as in Stage 2.
 
-Status: **implemented and verified to run end to end; not yet measured on real data.** `06_fm_before_classifier.ipynb` executes all 25 code cells against a fabricated Stage 1 world (see `## Verification` below), but the Colab run over the real feature caches has not happened yet. No number in `doc/RESULTS.md` comes from Stage 3 so far.
+Status: **run once on Colab (2026-08-31); results not yet transcribed.** `06_fm_before_classifier.ipynb` completed end to end over the real Stage 1 feature caches and wrote its artifacts to `outputs/fm_before_classifier` on Drive. Those numbers have **not** been read into `doc/RESULTS.md` yet, so no figure in this repository's documentation is a measured Stage 3 result. The notebook has since gained the diagnostic sections in Section 11 below, which need a rerun to populate - the grid itself is cached and will not retrain.
 
 ## 0. Lock the Stage 3 experimental plan
 
@@ -121,6 +121,35 @@ not a point.
 - [x] **Five-panel reverse strip** (Section 18b) showing where the templates travel, drawn over the
   real test features.
 
+## 11. Diagnostic figures beyond the required set
+
+The required figures answer "did it work". These answer "what did it do", which is what a flat or
+small `ΔAcc` actually needs. All were added after the first Colab run.
+
+- [x] **Which predictions changed** (Section 19). Every test sample sorted into `fixed` / `broken` /
+  `both_right` / `both_wrong` against the probe on the same split. `fixed - broken` is exactly the
+  numerator of `ΔAcc`, and `fixed + broken` is the churn underneath it - a +.004 mean is consistent
+  with "fixed 8, broke 0" and with "fixed 200, broke 192", and those are different findings. Verified
+  by a test asserting the four categories are exhaustive and that `fixed - broken` reproduces `ΔAcc`.
+- [x] Alongside it, the two panels that say *what distinguishes* those groups: how far the flow moved
+  each one, and what the probe's own logit margin was on them. A flow that rescues samples the probe
+  was unsure about is behaving sensibly; one that breaks confidently-correct samples is not, and no
+  aggregate would show it.
+- [x] **Per-class effects** (Section 20). Per-class accuracy before vs after as a scatter about the
+  diagonal, plus the largest movers by name. Guards against a flat mean that hides equal numbers of
+  helped and hurt classes.
+- [x] **Flow trajectories** (Section 21). The Stage 2 §11 figure that Stage 3 was missing: paths
+  through the learned field in a jointly-fit PCA. Examples are chosen **by outcome** rather than at
+  random, so a successful and an unsuccessful transport appear side by side instead of averaged.
+- [x] **Effect sizes at a glance** (Section 22). Paired slope plot (one line per dataset x seed,
+  which is the honest view of a paired comparison), a forest plot of every cell's bootstrap CI with
+  McNemar significance marked, and the `ΔAcc` heatmap. The Section 10 bar chart is the least
+  informative of the four and should not be the figure anyone quotes.
+- [x] **Inline report** (Section 24). Reloads every saved CSV and PNG from Drive and renders them in
+  the notebook. This exists because the skip-if-already-saved logic means a rerun does not re-execute
+  the plotting cells' upstream work, so on a resumed run the figures would otherwise not reappear -
+  only a list of filenames.
+
 ## 10. Optional extension - jointly fine-tuning the classifier
 
 - [x] After the frozen-classifier experiments, unfreeze the pretrained linear classifier and optimize it jointly with the FM, at its own smaller learning rate, with `unfreeze_epoch` available for delayed unfreezing. (Section 16, `RUN_JOINT_FINETUNE`.)
@@ -131,14 +160,16 @@ not a point.
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:
 
 - **Unit/behaviour suite**, 58 checks over both feature transforms: probe loading, freezing, the fidelity and identity guards (including a negative control proving the identity guard has teeth), all four training variants, the resume path, gradient flow to a joint head and its absence from a frozen one, the bootstrap/McNemar helpers, and that the guidance target lowers classification loss under all three constraint modes. Plus a learnability check: against a deliberately undertrained frozen head, both strategies must beat epoch 0 - measured at validation .117 -> .433 and test .056 -> .300 for Strategy 1, .117 -> .383 / .278 for Strategy 2.
-- **Notebook integration run**: every one of the 25 code cells parsed and executed against three fabricated datasets and three seeds, producing all 21 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none.
+- **Notebook integration run**: every one of the 30 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions.
 - **Optional-analysis suite**, 40 checks over both feature transforms: both curve endpoints self-anchoring, displacement starting at exactly zero and never decreasing, `accuracy_by_step` agreeing with the full metrics table, `t*` never beating the test-curve oracle, every recovery rate inside [0,1], and an identity field round-tripping with exactly zero error and a flat accuracy curve. It also confirms the training margin rises (-0.23 -> 3.59) and training cross-entropy collapses (1.76 -> 0.11) while *test* accuracy falls - overfitting at K=10, which is what motivates the `t*` ablation.
 
 Three defects were found and fixed this way rather than on Colab: the missing epoch-0 checkpoint described in Section 5, the transform-dependent guidance step size described in Section 4, and float32-vs-float64 comparison against Stage 1's saved accuracies described in Section 1.
 
 ## Open items
 
-- [ ] **Run `06_fm_before_classifier.ipynb` end to end on Colab** over the real Stage 1 caches. Nothing below can be filled in until this happens.
+- [x] ~~Run `06_fm_before_classifier.ipynb` end to end on Colab over the real Stage 1 caches.~~ Done 2026-08-31.
+- [ ] **Rerun to populate Sections 19-22 and 24**, which postdate that run. The grid is cached, so this retrains nothing.
+- [ ] **Transcribe the measured numbers into `doc/RESULTS.md`.** Until that happens the results exist only on Drive.
 - [ ] Record the measured Stage 3 results in `doc/RESULTS.md`, including the epoch-0 count from Section 10 and the paired-significance summary from Section 13.
 - [ ] Report the two variant sweeps: whether the displacement penalty changes anything, and which guidance knobs matter.
 - [ ] Report the joint fine-tuning extension **against the `head_only` control**, not against the Stage 1 probe.

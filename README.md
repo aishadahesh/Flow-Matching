@@ -79,8 +79,16 @@ The intermediate-flow-time curve is anchored at both ends and asserts it: identi
 initialization makes `t=0` accuracy exactly the Stage 1 linear probe, and `t=1` exactly
 the reported Stage 3 result, so the curve is ΔAcc unrolled.
 
-**Status: implemented, not yet measured.** The notebook has been verified to execute
-end to end against fabricated Stage 1 artifacts, but the Colab run over the real
-feature caches has not happened. No number in `doc/RESULTS.md` comes from Stage 3.
+Sections 19-22 are diagnostics for reading a small or flat ΔAcc: which predictions the
+flow fixed versus broke and what distinguishes those groups, per-class effects, flow
+trajectories chosen by outcome, and an effect-size panel with paired slopes and
+bootstrap CIs. Section 24 reloads every saved CSV and figure from Drive and renders
+them inline as one report — useful on a rerun, where the cached grid means the earlier
+plotting cells do not re-execute.
+
+**Status: run once on Colab (2026-08-31); numbers not yet transcribed into
+`doc/RESULTS.md`.** Sections 19-22 and 24 postdate that run and need a rerun to
+populate; the grid is cached, so nothing retrains.
+
 Protocol is documented in `doc/DOC.md` Part III; task tracking in
 `doc/TODO_stage3.md`.

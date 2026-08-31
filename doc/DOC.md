@@ -684,6 +684,40 @@ forward pass uses {0, ..., 1 - 1/T}, so they do not coincide even for a perfectl
 flow trained to make a classifier's job easier has every reason to be contractive - which is not
 invertible in principle. These recover a plausible pre-image, not the original point.
 
+## 32c. Diagnostics for reading a small effect
+
+The required outputs in section 31 answer whether Stage 3 worked. They do not answer what it did,
+and for a stage whose baseline is the strongest method in the project, that second question is
+likely to be the one that matters.
+
+**Prediction outcomes.** Every test sample is sorted against the linear probe on the same split into
+`fixed` (probe wrong, Stage 3 right), `broken` (the reverse), `both_right` and `both_wrong`. This
+matters because `fixed - broken` is exactly the numerator of `ΔAcc` while `fixed + broken` is the
+churn underneath it, and the mean cannot distinguish "fixed 8, broke 0" from "fixed 200, broke 192".
+Two further panels ask what distinguishes those groups - how far the flow moved each, and what the
+probe's own logit margin was on them. A flow that rescues samples the probe was already unsure about
+is behaving sensibly; one that destroys confidently-correct predictions is not, and no aggregate
+would reveal it.
+
+**Per-class effects.** A flat mean can hide a flow that helps as many classes as it hurts. Per-class
+accuracy before versus after, plotted about the diagonal, separates those cases.
+
+**Flow trajectories.** Paths through the learned field in a jointly-fit PCA - the Stage 2 section 21
+figure, which Stage 3 initially lacked. PCA rather than t-SNE for the reason given there: a
+trajectory must remain interpretable as a path. Examples are selected by *outcome* rather than at
+random, so a successful and an unsuccessful transport are visible side by side instead of averaged
+together.
+
+**Effect sizes.** A paired slope plot with one line per dataset and seed, a forest plot of every
+cell's bootstrap confidence interval with McNemar significance marked, and a `ΔAcc` heatmap. The
+paired slope plot is the honest view of a paired comparison; the grouped bar chart in the required
+table's figure is the least informative of the four and should not be the one quoted.
+
+**An inline report** reloads every saved table and figure from disk and renders them in the
+notebook. This is not redundancy: the skip-if-already-saved convention means a rerun does not
+re-execute the cells that produced the figures, so on a resumed run the notebook would otherwise show
+only a list of filenames.
+
 ## 33. Stage 3 failure modes to prevent
 
 In addition to the Stage 1 and Stage 2 failure modes in sections 10 and 22:
@@ -712,6 +746,9 @@ In addition to the Stage 1 and Stage 2 failure modes in sections 10 and 22:
   be corrected for exactly this.
 - Reading `t* = 0` as evidence that the flow should be stopped immediately. For a run whose FM stayed
   at the identity the accuracy curve is flat, and `argmax` returns the first index.
+- Quoting a small `ΔAcc` without the fixed/broken breakdown behind it. The same mean is produced by a
+  flow that changes almost nothing and by one that churns hundreds of predictions in both directions,
+  and those warrant different conclusions.
 
 ## 34. Stage 3 definition of done
 
