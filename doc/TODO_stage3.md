@@ -301,6 +301,55 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
 - [x] After the frozen-classifier experiments, unfreeze the pretrained linear classifier and optimize it jointly with the FM, at its own smaller learning rate, with `unfreeze_epoch` available for delayed unfreezing. (Section 16, `RUN_JOINT_FINETUNE`.)
 - [x] **Add the control that makes the comparison interpretable.** Unfreezing adds two things at once - the FM *and* extra training of the classifier itself - so a joint run that beats the Stage 1 probe may simply be a probe that trained longer. A `head_only` control continues the same Stage 1 head for the same epoch budget under the same optimizer and the same validation-checkpointing rule, with no FM at all. **The number that means anything is joint versus that control, not joint versus Stage 1.** The specification does not ask for this control; without it the extension cannot support a claim.
 
+## 12. Adopted after reviewing another group's Stage 3 notebook
+
+A peer group's Stage 3 write-up was read as reference. Four of their choices were better than ours
+and were adopted; the reasoning is recorded here so the changes are traceable to evidence rather
+than to imitation.
+
+- [x] **Source-anchored trust region** (their idea, clearly the most valuable). Their Strategy 2
+  projects each target iterate into a ball around the *source* `z`; ours projected around the
+  current `z_hat`. Theirs is right: anchoring at `z_hat` bounds each refresh but not the
+  accumulation, so over ~200 refreshes the target can drift arbitrarily far from the feature it is
+  meant to be a nearby improvement of. Measured before adopting - against a field that had already
+  carried features away, source anchoring held total displacement at the radius 0.10 while `z_hat`
+  anchoring reached 2.17, a 21x overshoot. Now the default; `guidance_anchor='current'` keeps the
+  old behaviour as a swept variant so the difference is measured, not asserted.
+- [x] **Monotone target acceptance.** Take the lowest-CE iterate among the projected candidates
+  rather than the last one, since a projected gradient step can be undone by the projection.
+  Verified it is not dead code: at conservative settings it changes nothing, and at radius 0.5 with
+  beta 5 it rescues 2.2% of samples and lowers mean target CE from 1.0456 to 1.0052.
+- [x] **Scale-free displacement penalty.** Theirs is `||z_hat - z||^2 / ||z||^2`; ours was absolute.
+  This is the same reasoning already applied to the guidance step size, so not applying it to the
+  penalty was an inconsistency on our side. The lambda grid moves from {1e-2, 1e-1} to {1, 10, 100}
+  accordingly.
+- [x] **Trust-region hit-rate diagnostic.** They report it and flag in their limitations that the
+  radius was binding for nearly all targets, so results may depend materially on it. That is a real
+  caveat we had no way to detect. Now recorded per refresh and surfaced in the sweep table.
+- [x] **The nonlinear-capacity limitation**, from their limitations list: freezing `W, b` does not
+  make the system linear, because the FM warps the space. Our own Section 23c demonstrates it
+  vividly (rings, .458 -> .990 with a frozen line), so it is now stated in `DOC.md` §33 and in
+  `STAGE3_COMPLIANCE.md`.
+- [x] **A compliance map** (`doc/STAGE3_COMPLIANCE.md`), matching the Stage 2 one and their
+  deviations table. We had no Stage 3 equivalent.
+
+Deliberately **not** adopted, with reasons:
+
+- *Selecting hyperparameters on seed-0 validation and propagating the winners to seeds 1-2.* They do
+  this and disclose it as a limitation ("seed 0 is partly a development run"). Our main table uses
+  fixed defaults for every seed and confines sweeps to seed 0 without propagating, so we do not have
+  the leakage and should not introduce it.
+- *Their pre-registration and ADR process.* Sound practice, but a process artefact rather than a
+  method, and not reconstructible after the fact.
+- *T = 4 and two datasets.* Both are valid readings of the specification; ours are T = 12 and three
+  datasets, already justified in Section 0.
+
+Where our implementation is stronger, for the record: we compute paired bootstrap CIs and exact
+McNemar per cell (they make no significance claims); our joint-extension attribution has four legs
+including `fm_only`, where theirs has the classifier-only control but not the FM-under-the-original-
+head evaluation; and we carry the outcome breakdown, per-class effects, displacement decomposition,
+flow-time curves, reverse flow and the 2D simulation, which have no counterpart there.
+
 ## Verification performed before the Colab run
 
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:

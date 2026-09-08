@@ -96,5 +96,7 @@ the numbers are not yet transcribed into `doc/RESULTS.md`, and the Stage 1 basel
 on Drive disagree with the Stage 1 table there — see `doc/TODO_stage3.md`.** Sections 23 and 25 postdate that run and need a rerun to
 populate; the grid is cached, so nothing retrains.
 
-Protocol is documented in `doc/DOC.md` Part III; task tracking in
+Protocol is documented in `doc/DOC.md` Part III; every specification clause is
+mapped to where it is implemented in `doc/STAGE3_COMPLIANCE.md`, which also lists
+what is deliberately *not* part of the required experiment; task tracking in
 `doc/TODO_stage3.md`.

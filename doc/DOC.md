@@ -543,11 +543,19 @@ For each training feature `z`, run the complete `T`-step rollout to obtain `z_ha
 through the frozen classifier, and minimize
 
 ```
-L = CE(W z_hat + b, y)  +  lambda_disp * ||z_hat - z||^2  +  (lambda_vel / T) * sum_k ||v(z_k, t_k)||^2
+L = CE(W z_hat + b, y)  +  lambda_disp * mean_i ||z_hat_i - z_i||^2 / ||z_i||^2  +  (lambda_vel / T) * sum_k ||v(z_k, t_k)||^2 / mean_i ||z_i||^2
 ```
 
 backpropagating through all `T` sequential steps and updating only the FM parameters. Both penalty
 weights default to zero, so the required main result is the unregularized objective.
+
+Both penalties are **scale-free**: the displacement term is the per-sample relative squared displacement
+`||z_hat - z||^2 / ||z||^2`, not the absolute one, and the velocity term is divided by the mean
+squared feature norm. The reason is the one that applies to the guidance radius: Stage 1 picks the
+feature transform per run, so an absolute `lambda` would mean two entirely different strengths on
+two datasets appearing in the same table. With the relative form, `lambda = 1` makes a 100%
+displacement cost about as much as one nat of cross-entropy, which puts the useful range at
+O(1)-O(100).
 
 The penalties are not decoration either. When Stage 1 selected the `l2` transform, the head was only
 ever fit on unit-norm features. An unregularized rollout is free to move `z_hat` off that sphere into
@@ -566,26 +574,38 @@ conditional flow matching. For each training feature `z`:
 3. take one or more gradient steps of that loss **with respect to `z_hat`** - in feature space, never
    in parameter space - to reach a nearby improved representation `z_hat'`;
 4. treat `z` as the source and `z_hat'` as the target;
-5. perform a standard FM update between them: `t ~ U(0,1)`, `z_t = (1-t) z + t z_hat'`, target
+5. perform a standard FM update between them: `t ~ U(0,1)`, `z_t = (1-t)z + t z_hat'`, target
    velocity `z_hat' - z`, loss `||v(z_t, t) - (z_hat' - z)||^2`;
 6. recompute the targets as the FM changes during training.
 
 The scheme is bootstrapped: each refresh moves the target a little further downhill in classifier
 loss and the FM chases it. Nothing pins the target to a fixed endpoint the way Stage 2's class
-prototypes did, which is why the step constraint carries real weight here.
+prototypes did, which is why the constraint on step 3 carries real weight.
 
-**The step size is a fraction of the mean training-feature norm, not an absolute distance.** Because
-Stage 1 chooses the transform per run, an absolute step of 0.5 would be a 50% displacement under
-`l2` (`||z|| = 1`) but roughly 2.5% under `standardize` (`||z|| ~ sqrt(384)`). One configured number
-has to mean the same thing across datasets, so it is expressed relatively.
+**The trust region is centred on the source `z`, not on the current `z_hat`.** This is the most
+consequential detail in the strategy, and the first implementation had it wrong. Anchoring at
+`z_hat` bounds each individual refresh but not their accumulation: `z_hat` moves every epoch, so
+across roughly 200 refreshes the target can wander arbitrarily far from the feature it is supposed
+to be a *nearby* improvement of, and the flow can be walked toward whatever the classifier happens
+to like best. Anchoring at `z` bounds the total displacement for the entire run. Measured against a
+field that had already carried features away: source anchoring held total displacement at exactly
+the radius, 0.10, while `z_hat` anchoring reached 2.17 - a 21x overshoot. The weaker behaviour is
+kept as `guidance_anchor='current'` so the difference is measured rather than argued.
 
-All three constraint modes the specification names are implemented, defaulting to `trust_region`:
+**The radius is per-sample and relative**, `rho_i = radius * ||z_i||`, and each gradient step is
+`step_fraction * rho_i`. Stage 1 chooses the feature transform per run, so an absolute radius would
+be a 50% displacement under `l2` (where `||z|| = 1`) and about 2.5% under `standardize` (where
+`||z||` is about `sqrt(384)`) - two different experiments in one table.
 
-| mode | behaviour | trade-off |
-|---|---|---|
-| `none` | `z_hat' = z_hat - eps * grad` | already-confident samples take naturally small steps, which is desirable, but raw gradient norms vary by orders of magnitude across samples |
-| `unit` | each step has length exactly `eps` | scale-free, but moves already-correct samples as far as wrong ones |
-| `trust_region` | raw steps, cumulative displacement clipped to `eps` | keeps the gradient's own scaling while capping the worst case |
+**The target is the lowest-CE iterate, not the last one.** A *projected* gradient step is not
+guaranteed to reduce the loss, because the projection can undo it, so the final iterate can be worse
+than where it started. Measured: at conservative settings this changes nothing; at an aggressive
+radius it rescues a few percent of samples. It costs one extra forward pass per step.
+
+Every refresh records a **trust-region hit rate**, the fraction of targets sitting exactly on the
+boundary. If that is near 1.0 the radius binds for essentially every sample, which means the result
+depends materially on a number that was chosen rather than fitted - a fact that belongs in the
+write-up rather than in the config.
 
 ## 30. Stage 3 experimental protocol
 
@@ -791,6 +811,17 @@ In addition to the Stage 1 and Stage 2 failure modes in sections 10 and 22:
   cross-entropy, the other a velocity regression MSE.
 - Reporting the joint fine-tuning extension against the Stage 1 probe rather than against the
   head-only control.
+- Anchoring Strategy 2's trust region at the current `z_hat` rather than at the source `z`. It
+  bounds each refresh and looks correct, but permits unbounded cumulative drift across refreshes,
+  so the target stops being a *nearby* improvement of the feature it came from.
+- Reading a Strategy 2 result without its trust-region hit rate. A hit rate near 1.0 means the
+  radius, not the classifier gradient, is determining the target.
+- Treating "the classifier is frozen" as "the model is linear". `W F_theta(z) + b` represents a
+  nonlinear decision boundary whenever `F_theta` is nonlinear, so freezing `W, b` does not bound
+  what the system can fit. Section 23c makes this concrete: on concentric rings, which no line
+  separates, the frozen probe sits at .458 and the same frozen probe behind a trained FM reaches
+  .990. Conclusions are about this FM at this operating point, not about frozen linear classifiers
+  in general.
 - Describing the untouched classifier template's recovery rate as a ceiling in the reverse-flow
   analysis. It is a pre-transport reference; reverse flow can beat it, and Stage 2's write-up had to
   be corrected for exactly this.

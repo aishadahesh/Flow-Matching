@@ -465,8 +465,16 @@ The separate `04` pass with `FORCE_RETRAIN_STANDARD = True` is also still outsta
 been read into this file, so **nothing below is a measured Stage 3 result yet** - this section still
 records what goes here and what to be careful about when reading it.
 
-The notebook has since gained diagnostic Sections 19-22 and the inline report in Section 24, which
-postdate that run. Rerunning populates them without retraining anything: the grid is cached.
+**The next rerun will retrain, unlike the previous ones.** Strategy 2's objective changed after a
+peer review comparison - its trust region is now anchored on the source feature `z` rather than on
+the current `z_hat`, the radius is per-sample, and the target is the lowest-CE iterate - and the
+Strategy 1 penalties became scale-free. The resolved guidance settings are now part of each run's
+config, so every `guided` run (9 in the main grid, 33 in the sweep) is correctly invalidated and
+retrains; the `e2e` caches are deliberately left valid, because their behaviour at `lambda = 0` is
+unchanged. **Every `guided` number produced before this change is stale.** Budget roughly ten
+minutes on a T4.
+
+Sections 19-23 and 25 also postdate the last run and need populating.
 
 ## What will be reported
 
