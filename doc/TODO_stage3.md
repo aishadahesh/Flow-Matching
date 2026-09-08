@@ -176,6 +176,121 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   nothing between them, the caption reports the true Euler step, and the accuracy readout changes
   only at a real state; and the PCA is fit once over all states and held fixed, so points move
   because the features move, not because the projection is being refitted per frame.
+- [x] **A 2D simulation** (Section 23c), because every other figure in this notebook is either a
+  number or a projection of something that is not two-dimensional. Two concentric rings - an inner
+  disc inside an annulus - run through the *same* `train_stage3` / `euler_rollout` /
+  `evaluate_system` functions, so it is a demonstration and an end-to-end check at once. The frozen
+  decision regions are drawn directly, the learned velocity field is shown as a quiver at three flow
+  times (in 384 dimensions it can only be inferred from summary statistics), and the whole thing is
+  animated.
+- [x] Two mistakes fixed in that toy before it was worth keeping. The first design used a bimodal
+  class with lobes on opposite sides, which *looks* non-linear but is not - a classifier can give
+  that class near-zero weight and hand it every region the others do not claim, so the probe reached
+  .92 and there was nothing to demonstrate. The second was training the toy probe without validation
+  selection, which on a problem with no linear signal landed it *below* chance at .276 and inflated
+  the flow's apparent gain; it now uses Stage 1's rule and sits at .458, where a line belongs.
+- [x] Report the three-way toy result rather than a flattering two-way one. Measured: probe .4583,
+  end-to-end .9896 (+.53), classifier-guided at the default guidance step .4583 (**+.0000** - it kept
+  the identity), classifier-guided at step 0.5 .8646 (+.41). The default failure is a **tuning
+  artifact, not a limitation of the method** - checked before reporting - and the toy is where the
+  reason is visible: the trust region caps how far the target may move per refresh, so too small a
+  step means the target creeps and the run early-stops before it has travelled anywhere useful. That
+  is the concrete justification for Section 15's sweep.
+- [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
+  the notebook. This exists because the skip-if-already-saved logic means a rerun does not re-execute
+  the plotting cells' upstream work, so on a resumed run the figures would otherwise not reappear -
+  only a list of filenames. Animations are re-embedded as base64, which grows the saved `.ipynb` - noted in the section itself.
+
+## 10. Optional extension - jointly fine-tuning the classifier
+
+> *"After completing the frozen-classifier experiments, you may also unfreeze the pretrained linear classifier and jointly optimize the FM transformation and classifier. Compare this with the frozen-classifier setting and with the original Stage 1 linear probe. You may experiment with choices such as different learning rates for the FM and classifier, delayed unfreezing, or additional regularization."*
+
+- [x] Unfreeze the classifier and optimize it jointly with the FM, at its own learning rate, through the same `train_stage3` loop and the same validation-checkpointing rule.
+- [x] **Compare against the frozen-classifier setting**, which the specification asks for explicitly. An earlier version of Section 16 compared only against the Stage 1 probe and the head-only control and silently omitted the frozen Stage 3 rows - the comparison that sentence actually names. The table now carries all six: `linear_probe`, `e2e__frozen`, `guided__frozen`, `head_only`, `e2e__joint`, `guided__joint`.
+- [x] **Compare against the original Stage 1 linear probe**, also as asked.
+- [x] **Add the `head_only` control the specification does not ask for.** Unfreezing adds the FM *and* extra classifier training at once, so a joint run that beats Stage 1 may just be a probe that trained longer. The control continues the same head for the same budget with no FM at all. Any joint gain smaller than the control's is not evidence for flow matching.
+- [x] **Attribute every joint run four ways** on the same test split: `probe` = `W0 z + b0`, `fm_only` = `W0 z_hat + b0` (the FM judged by the *original* classifier), `head_only` = `W1 z + b1` (the tuned classifier with no FM), `full` = `W1 z_hat + b1`. Without this, "unfreeze everything and accuracy rose" does not say which half did it. Verified exact: with an identity FM, `fm_only == probe` and `full == head_only`.
+- [x] Record `head_drift` per run - absolute and relative weight drift, bias drift, per-class weight cosine - so "how far did the classifier travel to buy that gain" is measured rather than assumed.
+- [x] **Sweep the three things the specification names** (Section 16b; subset seed 0, end-to-end only, one knob at a time from the default):
+  - *learning rates for the FM and classifier*: `head_lr` at `0.01x`, `0.1x` (default) and `1.0x` the FM learning rate. The head starts at a good solution and the FM starts at nothing, so an equal rate lets the head move fastest exactly when the FM has no signal yet.
+  - *delayed unfreezing*: `unfreeze_epoch` in {1, 10, 30}. With a zero-initialised output the FM's first epochs are nearly flat, and that is precisely the interval in which an unfrozen head would absorb all the gradient.
+  - *additional regularization*: an anchor `lambda * (||W - W0||^2 + ||b - b0||^2)` at {0, 1e-2, 1}. This rather than weight decay: weight decay pulls the head toward zero, which is not where it started, whereas the anchor pulls it toward the pretrained solution and so directly controls how much of any gain is allowed to come from moving the classifier. Measured to reduce drift.
+- [x] Figure (Section 16c): four-way attribution bars, a drift-versus-gain scatter, and the sweep. The scatter is the one to read - high and to the left is a real gain with the classifier barely moved, which is what Stage 3 set out to test; high and to the right is a fine-tuned classifier wearing a flow-matching hat.
+- [x] Print an explicit per-cell verdict ("the FM did the work" / "the classifier did the work - the flow is decoration here" / "both contributed") rather than leaving the reader to derive it.
+
+## 11. Diagnostic figures beyond the required set
+
+The required figures answer "did it work". These answer "what did it do", which is what a flat or
+small `ΔAcc` actually needs. All were added after the first Colab run.
+
+- [x] **Which predictions changed** (Section 19). Every test sample sorted into `fixed` / `broken` /
+  `both_right` / `both_wrong` against the probe on the same split. `fixed - broken` is exactly the
+  numerator of `ΔAcc`, and `fixed + broken` is the churn underneath it - a +.004 mean is consistent
+  with "fixed 8, broke 0" and with "fixed 200, broke 192", and those are different findings. Verified
+  by a test asserting the four categories are exhaustive and that `fixed - broken` reproduces `ΔAcc`.
+- [x] Alongside it, the two panels that say *what distinguishes* those groups: how far the flow moved
+  each one, and what the probe's own logit margin was on them. A flow that rescues samples the probe
+  was unsure about is behaving sensibly; one that breaks confidently-correct samples is not, and no
+  aggregate would show it.
+- [x] **Translation versus transport** (Section 19b), added after the animation showed the cloud
+  appearing to slide bodily across the frame. A large *common* displacement is the cheapest way for
+  an FM in front of an affine classifier to buy accuracy: adding a fixed vector `m` to every feature
+  shifts the logits by `W m`, a per-class constant, which is exactly a re-fit of the classifier's
+  bias. The displacement is therefore split into a common translation and a per-sample residual and
+  each is scored alone (`shift_only`, `residual_only`), with `m` estimated on the training subset so
+  the control never sees test displacements. If `shift_only` recovers most of the gain, the result is
+  a bias correction a single vector could deliver and must be reported as such, not as flow matching
+  doing the work. Verified against synthetic fields: a pure translation is attributed entirely to
+  `shift_only`, a pure contraction entirely to `residual_only`.
+- [x] Record why direction relative to the class clusters is **not** evidence of a bug in Stage 3,
+  unlike Stage 2. Stage 2's flow had an explicit prototype target, so features visibly moved toward
+  their own class and anything else would have been wrong. Stage 3's objective is the frozen
+  classifier's logits, and nothing in it rewards staying near the class cloud or near `z`; a flow
+  that leaves the data manifold entirely is a valid minimum. The animation was separately verified
+  faithful - frame 0 asserted equal to `z`, the final frame asserted equal to the endpoint Section 10
+  scores, and cosine `+1.0` against a field with known constant velocity.
+- [x] **Per-class effects** (Section 20). Per-class accuracy before vs after as a scatter about the
+  diagonal, plus the largest movers by name. Guards against a flat mean that hides equal numbers of
+  helped and hurt classes.
+- [x] **Flow trajectories** (Section 21). The Stage 2 §11 figure that Stage 3 was missing: paths
+  through the learned field in a jointly-fit PCA. Examples are chosen **by outcome** rather than at
+  random, so a successful and an unsuccessful transport appear side by side instead of averaged.
+- [x] **Effect sizes at a glance** (Section 22). Paired slope plot (one line per dataset x seed,
+  which is the honest view of a paired comparison), a forest plot of every cell's bootstrap CI with
+  McNemar significance marked, and the `ΔAcc` heatmap. The Section 10 bar chart is the least
+  informative of the four and should not be the figure anyone quotes.
+- [x] **The rollout as video** (Section 23). Two animations of the same `T`-step Euler rollout the
+  rest of the notebook reports: the whole test cloud moving from `z` to `ẑ` with a live accuracy
+  readout at each Euler state, and individual paths coloured by **outcome** rather than by class, so
+  a `fixed` path and a `broken` path appear in the same frame. MP4 via `ffmpeg` where available (it
+  is on Colab), animated GIF otherwise; both are saved and embedded inline. The dataset animated is
+  the one with the largest `|ΔAcc|`, ranked on the absolute value so a flow that clearly makes things
+  worse is just as likely to be shown.
+- [x] Two honesty constraints on that video, both stated on the figure: frames between Euler states
+  are **linear interpolation added only for legibility** - the model produces `T + 1` states and
+  nothing between them, the caption reports the true Euler step, and the accuracy readout changes
+  only at a real state; and the PCA is fit once over all states and held fixed, so points move
+  because the features move, not because the projection is being refitted per frame.
+- [x] **A 2D simulation** (Section 23c), because every other figure in this notebook is either a
+  number or a projection of something that is not two-dimensional. Two concentric rings - an inner
+  disc inside an annulus - run through the *same* `train_stage3` / `euler_rollout` /
+  `evaluate_system` functions, so it is a demonstration and an end-to-end check at once. The frozen
+  decision regions are drawn directly, the learned velocity field is shown as a quiver at three flow
+  times (in 384 dimensions it can only be inferred from summary statistics), and the whole thing is
+  animated.
+- [x] Two mistakes fixed in that toy before it was worth keeping. The first design used a bimodal
+  class with lobes on opposite sides, which *looks* non-linear but is not - a classifier can give
+  that class near-zero weight and hand it every region the others do not claim, so the probe reached
+  .92 and there was nothing to demonstrate. The second was training the toy probe without validation
+  selection, which on a problem with no linear signal landed it *below* chance at .276 and inflated
+  the flow's apparent gain; it now uses Stage 1's rule and sits at .458, where a line belongs.
+- [x] Report the three-way toy result rather than a flattering two-way one. Measured: probe .4583,
+  end-to-end .9896 (+.53), classifier-guided at the default guidance step .4583 (**+.0000** - it kept
+  the identity), classifier-guided at step 0.5 .8646 (+.41). The default failure is a **tuning
+  artifact, not a limitation of the method** - checked before reporting - and the toy is where the
+  reason is visible: the trust region caps how far the target may move per refresh, so too small a
+  step means the target creeps and the run early-stops before it has travelled anywhere useful. That
+  is the concrete justification for Section 15's sweep.
 - [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
   the notebook. This exists because the skip-if-already-saved logic means a rerun does not re-execute
   the plotting cells' upstream work, so on a resumed run the figures would otherwise not reappear -
@@ -191,7 +306,7 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:
 
 - **Unit/behaviour suite**, 58 checks over both feature transforms: probe loading, freezing, the fidelity and identity guards (including a negative control proving the identity guard has teeth), all four training variants, the resume path, gradient flow to a joint head and its absence from a frozen one, the bootstrap/McNemar helpers, and that the guidance target lowers classification loss under all three constraint modes. Plus a learnability check: against a deliberately undertrained frozen head, both strategies must beat epoch 0 - measured at validation .117 -> .433 and test .056 -> .300 for Strategy 1, .117 -> .383 / .278 for Strategy 2.
-- **Notebook integration run**: every one of the 34 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions. The animation frame plan is checked to cover every Euler step in order and end at `t=1`, and - since an identity field makes the videos static by construction - a non-identity field is confirmed to move features across the rollout, so a passing animation test is not vacuous.
+- **Notebook integration run**: every one of the 40 code cells parsed and executed against three fabricated datasets and three seeds, producing all 27 expected CSV and PNG artifacts and a 27-row `run_metrics.csv`; re-running the grid cell then loaded all 18 runs from disk and retrained none. Because every fabricated run keeps the identity, the diagnostic sections are additionally exercised on their degenerate path (no changed predictions), and `outcome_labels` is tested directly on crafted predictions. The joint attribution is verified exact against an identity FM, and the toy simulation - being fully synthetic - produces a real measured result locally rather than a degenerate one. The animation frame plan is checked to cover every Euler step in order and end at `t=1`, and - since an identity field makes the videos static by construction - a non-identity field is confirmed to move features across the rollout, so a passing animation test is not vacuous.
 - **Optional-analysis suite**, 40 checks over both feature transforms: both curve endpoints self-anchoring, displacement starting at exactly zero and never decreasing, `accuracy_by_step` agreeing with the full metrics table, `t*` never beating the test-curve oracle, every recovery rate inside [0,1], and an identity field round-tripping with exactly zero error and a flat accuracy curve. It also confirms the training margin rises (-0.23 -> 3.59) and training cross-entropy collapses (1.76 -> 0.11) while *test* accuracy falls - overfitting at K=10, which is what motivates the `t*` ablation.
 
 Three defects were found and fixed this way rather than on Colab: the missing epoch-0 checkpoint described in Section 5, the transform-dependent guidance step size described in Section 4, and float32-vs-float64 comparison against Stage 1's saved accuracies described in Section 1.

@@ -632,12 +632,38 @@ three-seed result: the Strategy 1 regularization weights, reported jointly with 
 displacement; and the four Strategy 2 knobs the specification names - step size, number of
 target-improvement steps, constraint mode, and refresh period.
 
-The optional extension unfreezes the classifier and optimizes it jointly with the FM. **It ships
-with a control the specification does not ask for, because without it the comparison cannot support
-a claim:** unfreezing adds the FM *and* extra training of the classifier at the same time, so a joint
+The optional extension unfreezes the classifier and optimizes it jointly with the FM. The
+specification asks for two comparisons - against the frozen-classifier setting and against the
+original Stage 1 probe - and both are in the table, alongside two additions.
+
+**A control the specification does not ask for, because without it the comparison cannot support a
+claim.** Unfreezing adds the FM *and* extra training of the classifier at the same time, so a joint
 run that beats the Stage 1 probe may just be a probe that trained longer. A `head_only` control
 continues the same head for the same budget under the same optimizer and selection rule, with no FM
-at all. Joint results are to be read against that control, not against Stage 1.
+at all. Any joint gain smaller than the control's is not evidence for flow matching.
+
+**A four-way attribution, because even that is not enough.** Once both parts have moved, which one
+did the work is still open, so every joint run is scored as `probe` (`W0 z + b0`), `fm_only`
+(`W0 z_hat + b0`, the FM judged by the *original* classifier), `head_only` (`W1 z + b1`, the tuned
+classifier with no FM) and `full` (`W1 z_hat + b1`). If `full` is about `head_only` the flow is
+decoration; if `full` is about `fm_only` the classifier barely moved. Measured classifier drift
+accompanies it.
+
+The three things the specification names to experiment with are each swept one knob at a time. The
+learning-rate ratio matters because the head starts at a good solution while the FM starts at
+nothing, so an equal rate lets the head move fastest exactly when the FM has no signal. Delayed
+unfreezing targets the same interval from the other side. For regularization an anchor on the drift
+from the Stage 1 weights is used rather than weight decay, because weight decay pulls the head toward
+zero, which is not where it began - the quantity worth limiting is how far it strays from the
+pretrained classifier this stage is supposed to be improving *on*.
+
+**A two-dimensional simulation** sits alongside the diagnostics. Two concentric rings, run through
+the same training functions, where the frozen decision regions and the learned velocity field can be
+drawn directly rather than projected. It is also where a fact about Strategy 2 becomes visible that
+384 dimensions hide: at the default guidance step the method keeps the identity entirely, and at a
+larger step it works. The trust region caps how far the target may move per refresh, so too small a
+step leaves the target creeping and the run early-stops before it has gone anywhere. That is a tuning
+artifact rather than a limitation, and it is the concrete reason the guidance sweep exists.
 
 ## 32b. Stage 2's optional analyses, adapted to Stage 3
 

@@ -85,8 +85,10 @@ trajectories chosen by outcome, and an effect-size panel with paired slopes and
 bootstrap CIs. Section 23 renders the rollout as video — the test cloud flowing from
 `z` to `ẑ` with a live accuracy readout, and individual paths coloured by outcome so a
 fixed and a broken path sit in the same frame. MP4 where ffmpeg is available, GIF
-otherwise. Section 25 reloads every saved table, figure and animation from Drive and
-renders them inline as one report — useful on a rerun, where the cached grid means the
+otherwise. Section 23c is a 2D simulation - two concentric rings run through the same
+training code - where the frozen decision boundary and the learned velocity field
+can be drawn directly instead of projected. Section 25 reloads every saved table,
+figure and animation from Drive and renders them inline as one report — useful on a rerun, where the cached grid means the
 earlier plotting cells do not re-execute.
 
 **Status: run on Colab (2026-08-31); the committed notebook carries its outputs, but
