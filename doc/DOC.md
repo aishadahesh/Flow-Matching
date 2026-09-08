@@ -2,7 +2,7 @@
 
 This document covers the protocol for all three stages. **Part I** is Stage 1: classification baselines on frozen pretrained encoders, with no Flow Matching component. **Part II** is Stage 2: the Flow Matching layer added on top of the selected prototype baseline. **Part III** is Stage 3: a Flow Matching transformation inserted *before* the frozen Stage 1 linear classifier.
 
-Stages 1 and 2 are measured. Stage 3 is implemented and verified to run, but has not yet been run on the real feature caches - no Stage 3 number exists yet.
+All three stages are measured. Stage 3 implementation revision 2 completed on the real feature caches on 2026-09-08; its results and controls are reported in `RESULTS.md`.
 
 Measured results and their discussion are in `RESULTS.md`. Per-stage task tracking is in `TODO_stage1.md`, `TODO_stage2.md` and `TODO_stage3.md`.
 
@@ -651,8 +651,14 @@ recipes". Two sweeps, both on subset seed 0 only, so they supplement rather than
 three-seed result: the Strategy 1 regularization weights, reported jointly with the measured
 displacement; and the four Strategy 2 knobs the specification names - step size, number of
 target-improvement steps, constraint mode, and refresh period.
+The guided sweep additionally ablates source versus current-FM anchoring and monotone versus
+last-iterate target selection, and reports how often the trust-region radius binds.
 
-The optional extension unfreezes the classifier and optimizes it jointly with the FM. The
+The optional extension unfreezes the classifier and optimizes it jointly with the FM. End-to-end
+training sends endpoint CE through both components. Guided training preserves standard FM for the
+velocity network and adds a separate endpoint CE with `z_hat` detached for the classifier; without
+that loss the guided "joint" path would never update the head because its regression target is
+detached. The
 specification asks for two comparisons - against the frozen-classifier setting and against the
 original Stage 1 probe - and both are in the table, alongside two additions.
 
@@ -677,13 +683,12 @@ from the Stage 1 weights is used rather than weight decay, because weight decay 
 zero, which is not where it began - the quantity worth limiting is how far it strays from the
 pretrained classifier this stage is supposed to be improving *on*.
 
-**A two-dimensional simulation** sits alongside the diagnostics. Two concentric rings, run through
-the same training functions, where the frozen decision regions and the learned velocity field can be
-drawn directly rather than projected. It is also where a fact about Strategy 2 becomes visible that
-384 dimensions hide: at the default guidance step the method keeps the identity entirely, and at a
-larger step it works. The trust region caps how far the target may move per refresh, so too small a
-step leaves the target creeping and the run early-stops before it has gone anywhere. That is a tuning
-artifact rather than a limitation, and it is the concrete reason the guidance sweep exists.
+**A two-dimensional simulation** sits alongside the diagnostics. Two concentric rings run through
+the same training functions, so the frozen decision regions and learned velocity field can be drawn
+directly rather than projected. The revision-2 result is diagnostic: end-to-end transforms the .4583
+linear probe into .9948 accuracy, while both guided settings select the identity checkpoint. A larger
+guided step no longer solves the toy once the trust region is correctly anchored at the source; the
+earlier positive guided result depended on revision 1's cumulative-drift semantics.
 
 ## 32b. Stage 2's optional analyses, adapted to Stage 3
 
@@ -851,5 +856,5 @@ replacement for a discriminatively trained classifier." What would make the find
 is not a negative `ΔAcc` - it is a positive one obtained against a mis-reconstructed baseline, which
 is what sections 26 and 27 exist to prevent.
 
-Measured outcomes against these criteria will be recorded in `RESULTS.md`; remaining open items are
-tracked in `TODO_stage3.md`.
+Measured outcomes against these criteria are recorded in `RESULTS.md`; the remaining Stage 1
+artifact-provenance discrepancy is tracked in `TODO_stage3.md`.

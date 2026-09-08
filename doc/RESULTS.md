@@ -6,15 +6,14 @@ Three baselines were built in Stage 1. Stage 2 adds a flow-matching layer to one
 
 | | Model | Stage 1 | Stage 2 | Stage 3 |
 |---|---|---|---|---|
-| 1 | Linear probe | done | not applicable | **implemented, not yet measured** - `06_fm_before_classifier.ipynb` |
+| 1 | Linear probe | done | not applicable | **done** - `06_fm_before_classifier.ipynb` |
 | 2 | Image-derived class prototypes | done | **done** - `04_flow_matching.ipynb` | not applicable |
 | 3 | Zero-shot CLIP RN50 text prototypes | done | **done** - `05_flow_matching_clip.ipynb` | not applicable |
 
 Stage 3 puts the FM layer in front of the frozen Stage 1 linear probe, so the linear probe stops
-being only a reference point and becomes the thing being improved on. Its notebook runs end to end
-against fabricated Stage 1 artifacts but has not been run on the real feature caches; **every number
-in this file is still Stage 1 or Stage 2**. The Stage 3 section at the end records what will be
-filled in and what to be careful about when reading it.
+being only a reference point and becomes the thing being improved on. Implementation revision 2
+completed on the real feature caches on 2026-09-08; the measured results and controls are reported
+in the final section.
 
 ---
 
@@ -460,110 +459,117 @@ The separate `04` pass with `FORCE_RETRAIN_STANDARD = True` is also still outsta
 
 # Stage 3 - FM before the frozen linear classifier
 
-**Run, not yet transcribed.** `06_fm_before_classifier.ipynb` completed end to end on Colab on
-2026-08-31 and wrote its artifacts to `outputs/fm_before_classifier` on Drive. Those numbers have not
-been read into this file, so **nothing below is a measured Stage 3 result yet** - this section still
-records what goes here and what to be careful about when reading it.
+**Implementation revision 2 completed on Colab on 2026-09-08.** All 40 code cells executed on a T4
+without an error. The Stage 1 validation/test fidelity guard passed within 1e-6 for all nine
+dataset-seed pairs, the zero-velocity rollout reproduced the probe exactly, and the two strategy
+gradient guards passed. The required grid contains 18 trained FM layers and 27 rows; the full run
+also wrote 18 tables, 17 figures, and the rollout animations.
 
-**The next rerun will retrain, unlike the previous ones.** Strategy 2's objective changed after a
-peer review comparison - its trust region is now anchored on the source feature `z` rather than on
-the current `z_hat`, the radius is per-sample, and the target is the lowest-CE iterate - and the
-Strategy 1 penalties became scale-free. The resolved guidance settings are now part of each run's
-config, so every `guided` run (9 in the main grid, 33 in the sweep) is correctly invalidated and
-retrains; the `e2e` caches are deliberately left valid, because their behaviour at `lambda = 0` is
-unchanged. **Every `guided` number produced before this change is stale.** Budget roughly ten
-minutes on a T4.
+## Required comparison - measured
 
-Sections 19-23 and 25 also postdate the last run and need populating.
-
-## What will be reported
-
-Top-1 test accuracy on the complete official test split for three methods on each of DTD,
-FGVC-Aircraft and Flowers-102, all on DINOv2 ViT-S/14 at K=10 with T=12, mean ± std over Stage 1's
-subset seeds {0, 1, 2}:
+Top-1 accuracy on the complete official test split, DINOv2 ViT-S/14, K=10, T=12. Values are mean ±
+sample standard deviation over the paired subset seeds {0, 1, 2}; each ΔAcc is against the exact
+frozen probe loaded for that same seed.
 
 | Dataset | Stage 1 linear probe | End-to-end rollout | ΔAcc | Classifier-guided | ΔAcc |
 |---|---|---|---|---|---|
-| DTD | .7181 ± .0111 | *pending* | | *pending* | |
-| Aircraft | .5096 ± .0138 | *pending* | | *pending* | |
-| Flowers-102 | .9932 ± .0000 | *pending* | | *pending* | |
+| DTD | .7167 ± .0081 | .7167 ± .0081 | +.0000 | **.7238 ± .0069** | **+.0071** |
+| Aircraft | .5285 ± .0064 | **.5476 ± .0037** | **+.0191** | .5448 ± .0057 | **+.0163** |
+| Flowers-102 | .9935 ± .0000 | .9935 ± .0000 | +.0000 | .9935 ± .0000 | +.0000 |
 
-The linear-probe column is not pending - those are the measured Stage 1 K=10 DINOv2 numbers from the
-table at the top of this file, and Stage 3 loads exactly those trained heads rather than retraining
-them. Two guards in the notebook assert that the reloaded probe reproduces its saved test accuracy
-before any FM is trained, so if the Stage 3 baseline column ever disagrees with the Stage 1 table,
-the run is wrong and must not be reported.
+The result is selective rather than universal. End-to-end rollout helps all three Aircraft subsets
+and nowhere else. Classifier-guided FM helps all three DTD and all three Aircraft subsets, while the
+already saturated Flowers-102 control stays exactly flat. No required run regressed on test.
 
-Also to be reported: representative training and validation curves for both strategies; the joint
-PCA and joint t-SNE feature-space comparisons; per-cell paired bootstrap CIs and exact McNemar
-tests against the probe; the two variant sweeps; the joint fine-tuning extension; and the two
-optional analyses carried over from Stage 2 - samples at intermediate flow times with a
-validation-selected stopping time, and the flow in reverse.
+Nine of 18 selected checkpoints are epoch 0 and therefore exact identity maps: every DTD
+end-to-end run and all six Flowers-102 runs. Flowers has only one effective K=10 subset because its
+official training split is exactly ten examples per class, so its zero spread is by construction.
+Validation ΔAcc remains uninformative because epoch 0 is always eligible; all conclusions above use
+the complete test split.
 
-The intermediate-flow-time curve is the one to lead with if the headline table is flat, because it
-is **anchored at both ends and the notebook asserts it**: identity initialization makes `t=0`
-accuracy exactly the linear probe and `t=1` exactly the Stage 3 number above, so the curve is ΔAcc
-unrolled and shows *where along the flow* anything happened. Read the logit margin alongside it -
-margin moves continuously where accuracy moves in jumps, so a flow that helps confidence without
-flipping predictions is visible there and nowhere else.
+### Paired evidence and prediction churn
 
-## Five things to state when the numbers arrive
+End-to-end has 3 positive, 0 negative, and 6 identity cells. All three Aircraft bootstrap CIs exclude
+zero and all three exact McNemar tests are significant. Guided has 6 positive, 0 negative, and 3
+identity cells; five of its six positive-cell CIs and McNemar tests are significant. The exception is
+DTD seed 1: ΔAcc +.0053, bootstrap CI [.0000, .0106], McNemar p=.0639. The other DTD guided gains are
++.0064 and +.0096; every Aircraft gain is significant for both strategies.
 
-**1. Validation ΔAcc is meaningless here; only test ΔAcc counts.** The FM is initialized to the exact
-identity, and epoch 0 is checkpointed like any other epoch, so the selected checkpoint can never have
-worse validation accuracy than the linear probe. Validation ΔAcc ≥ 0 is a property of the selection
-rule, not a finding. Quoting it as evidence would be a straightforward error.
+The mean fixed/broken counts explain how those gains arise:
 
-**2. Lead with the fixed/broken breakdown, not the mean.** Section 19 sorts every test sample into
-`fixed`, `broken`, `both_right`, `both_wrong`. `fixed − broken` is exactly the numerator of ΔAcc, and
-`fixed + broken` is the churn underneath it. A ΔAcc of +.004 produced by "fixed 8, broke 0" is a
-different finding from the same +.004 produced by "fixed 200, broke 192", and only the breakdown
-distinguishes them. Section 19's other two panels then say whether the broken samples were ones the
-probe had been confident about — which would be the most important thing on the page.
+| Dataset / strategy | Fixed | Broken | Net | Churn |
+|---|---:|---:|---:|---:|
+| DTD / guided | 20.0 | 6.7 | 13.3 | 26.7 |
+| Aircraft / end-to-end | 263.7 | 200.0 | 63.7 | 463.7 |
+| Aircraft / guided | 104.0 | 49.7 | 54.3 | 153.7 |
 
-**3. Report how many of the 18 runs selected epoch 0.** Those FM layers are the identity map - they
-learned nothing usable, and the system is exactly the linear probe. A mean that silently includes
-them reads as "a small consistent gain" when the real finding may be "it helped on 4 of 18 and did
-nothing on the rest". The notebook prints the count and lists the runs.
+Aircraft end-to-end buys the slightly larger mean gain with roughly three times the prediction churn
+of guided FM. Its mean relative feature displacement is .894, versus .082 for Aircraft guided and
+.061 for DTD guided. This is the main geometric caveat: end-to-end reaches farther off the original
+feature distribution, while guided produces nearly the same Aircraft gain with far less movement.
 
-**4. Flowers-102 K=10 has one effective subset, not three.** The official train split is exactly 1020
-images, 10 per class, so all three subset seeds select the identical set and `init_seed` is fixed at
-0. Its `std = .0000` is by construction. This already caught out the Stage 2 write-up and applies
-unchanged here.
+### Sweeps and optional joint fine-tuning
 
-**5. The joint fine-tuning extension must be read against its `head_only` control.** Unfreezing the
-classifier adds the FM *and* extra classifier training simultaneously. The control continues the same
-head for the same budget with no FM at all, and it is the only honest comparison. Joint-vs-Stage-1
-would attribute the control's gain to flow matching.
+The seed-0 scale-free regularization sweep supports that caveat. On Aircraft, a relative displacement
+penalty of 1 improves end-to-end from .5518 (+.0189) at relative displacement .906 to .5563 (+.0234)
+at .058. Stronger penalties shrink both motion and gain. On DTD, the unregularized run stays at the
+identity, while a penalty of 10 selects a modest .7176 (+.0059) solution at displacement .071.
+Flowers remains flat under every setting.
 
-## What the Stage 2 results predict
+Guidance is sensitive to its chosen geometry. The default trust-region boundary is hit by 100% of
+DTD targets and 87.0%, 91.8%, and 93.7% of Aircraft targets, so the radius materially controls the
+result. On Aircraft seed 0, ten guidance steps or unit-normalized gradients reach .5569 (+.0240),
+versus .5470 (+.0141) for the default; DTD's default is best or tied at +.0064. Every Flowers variant
+selects identity. These are seed-0 ablations, not replacements for the three-seed required table.
 
-Stage 3 is a harder ask than Stage 2 and the existing measurements say so. Stage 2 improved on a
-closed-form prototype rule and still did not surpass the linear probe in any setting where the probe
-led - it closed a median 59% of the gap. Stage 3 targets that probe directly, and asks a *frozen*
-affine classifier to do better on a representation it was itself fit on. On DINOv2 at K=10 the probe
-is already at .7181 / .5096 / .9932, and Flowers-102 has essentially no headroom at all.
+The optional joint comparison, averaged over all three seeds, is:
 
-Two Stage 2 findings transfer as cautions rather than predictions:
+| Dataset / method | Probe | FM only | Head only | Full joint | Attribution |
+|---|---:|---:|---:|---:|---|
+| Aircraft / end-to-end | .5285 | .5486 | .5286 | .5485 | FM did the work |
+| Aircraft / guided | .5285 | .5396 | .5331 | .5487 | both contributed |
+| DTD / end-to-end | .7167 | .7167 | .7167 | .7167 | no gain |
+| DTD / guided | .7167 | .7238 | .7167 | .7239 | FM did the work |
+| Flowers-102 / either | .9935 | .9935 | .9935 | .9935 | no gain |
 
-- **The control question from `04` §19 applies here too.** On Stage 2's largest-gain setting, a plain
-  supervised MLP with no flow reached 97% of the FM gain. Stage 3's Strategy 1 backpropagates a
-  classification loss through a rollout, which is a flexible nonlinear map trained on 10 examples per
-  class; if it gains, "is this flow matching or just a nonlinear layer?" is the immediate follow-up
-  and the write-up should anticipate it.
-- **The reverse-flow reference is not a ceiling.** Stage 3 has no class prototypes, so reverse flow
-  starts from the frozen classifier's own class templates and from a round trip on the class means.
-  For the templates, the untouched value is a *pre-transport reference*: `w_c` need not sit inside its
-  class's feature cloud, so reverse flow can legitimately beat it. `RESULTS.md` already carries a
-  correction for exactly this mistake in the Stage 2 write-up (see **Correction** above) - it would be
-  a poor showing to make it twice. The round-trip anchor is the safer one to lean on, because its
-  ideal is unambiguously zero.
-- **Displacement is a measured quantity, not an impression.** Every Stage 3 run records
-  `||ẑ - z|| / ||z||` on the test split. A large gain with a large displacement, under the `l2`
-  transform in particular, is the signature of the FM leaving the unit sphere the head was fit on and
-  exploiting the classifier off-manifold rather than improving the representation. Section 14's
-  regularization sweep exists to test that, and its result belongs next to the headline table.
+The `head_only` column prevents extra classifier training from being credited to FM. It shows that
+Aircraft guided joint tuning combines a smaller FM-only gain with a real head-only gain, whereas the
+Aircraft end-to-end and DTD guided gains remain attributable almost entirely to the FM.
 
-A negative or flat result is a legitimate outcome and should be reported plainly with the mechanism,
-following the Stage 2 precedent. What would be a genuine problem is a *positive* ΔAcc obtained
-against a mis-reconstructed baseline, which is what the two guards exist to prevent.
+### Flow-time, reverse-flow, and mechanism diagnostics
+
+The flow-time endpoint guard passed in every condition. For seed 0, DTD guided moves accuracy from
+.7117 at `t=0` to .7181 at `t=1`, while true-class margin rises from 1.185 to 1.358 and CE falls from
+1.180 to 1.107. Aircraft guided moves .5329 to .5470 with displacement .081, improves margin .025 to
+.320, and lowers CE 1.977 to 1.896. Aircraft end-to-end moves farther (.906): accuracy rises to .5518
+and margin to .278, but CE worsens to 2.304, showing more confident errors beneath the net gain.
+
+Validation-selected early stopping along the flow helps only one of six dataset-method conditions:
+Aircraft end-to-end rises from .5476 at `t=1` to .5513 at `t*` (+.0037). Its mean selected time is
+.694. DTD guided is slightly worse at `t*` (-.0009), guided Aircraft selects 1.0, and every identity
+condition is flat. The mean gain across all six conditions is only +.0005.
+
+Reverse-flow diagnostics agree with the displacement story. On seed 0, Aircraft end-to-end has
+round-trip error .0646 and template recovery falls from the pre-transport reference .61 to .26;
+guided has round-trip error .0008 and recovery .49. DTD guided round-trips at .0017 and retains full
+template recovery. Identity-selected fields round-trip exactly. The untouched template value is a
+reference, not a ceiling.
+
+The translation decomposition also distinguishes the methods. On seed 0, only 25% of DTD guided's
+gain is reproduced by the common shift alone; Aircraft guided is dominated by per-sample residual
+transport. Aircraft end-to-end's common shift is actively harmful, so its gain likewise comes from
+sample-dependent motion rather than a simple classifier-bias correction.
+
+### Two caveats that must travel with the table
+
+First, the exact probe artifacts loaded by this run give .7167 / .5285 / .9935, while the older
+Stage 1 aggregate table above records .7181 / .5096 / .9932. Revision 2 replayed both validation and
+test accuracy within 1e-6 and content-signed every upstream artifact, so the paired Stage 3 deltas are
+valid for the loaded heads; the older and newer aggregate tables must not be combined as if they came
+from one artifact set. The Stage 1 provenance discrepancy remains an open documentation item.
+
+Second, freezing the linear head does not make the complete system linear. The concentric-rings toy
+demonstrates the capacity of the nonlinear FM: the probe scores .4583 and end-to-end reaches .9948.
+Under the revision-2 source-anchored trust region, however, both guided settings (default and step
+0.5) select epoch 0 and remain at .4583. The earlier claim that a larger guided step solved the toy
+belonged to revision 1's cumulative-drift semantics and is not supported by the current run.

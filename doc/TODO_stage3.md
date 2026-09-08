@@ -2,9 +2,9 @@
 
 Source of truth: `ref/part_3.pdf`. Stage 3 inserts an FM transformation between the **frozen** image-encoder feature and the **frozen** Stage 1 linear probe: `z -> FM -> z_hat -> (W z_hat + b) -> s`. **Do not retrain the linear classifier for the required experiments, do not recompute Stage 1 features, and do not change the Stage 1 splits, subset seeds, or K.** The direct baseline is the Stage 1 linear probe on the same dataset, encoder, subset and seed - any deviation makes `ΔAcc` uninterpretable, exactly as in Stage 2.
 
-Status: **run on Colab (2026-08-31), including the diagnostic sections; results not yet transcribed.** `06_fm_before_classifier.ipynb` completed end to end over the real Stage 1 feature caches, and the committed notebook carries its outputs. Those numbers have **not** been read into `doc/RESULTS.md` yet, so no figure in this repository's prose is a measured Stage 3 result. Only the video section and the inline report postdate that run and still need one rerun; the grid is cached and will not retrain.
+Status (2026-09-08): **implementation revision 2 completed on Colab and its results are transcribed.** All 40 code cells ran without an error; the required guards passed, and the notebook produced the complete required grid plus all enabled analyses.
 
-**Before transcribing anything, resolve this:** the Stage 1 linear-probe baselines Stage 3 loaded from Drive are *not* the ones `doc/RESULTS.md` documents. Measured K=10 DINOv2 baselines were DTD .7167, Aircraft .5285, Flowers-102 .9935; `RESULTS.md` records .7181, .5096, .9932. The fidelity guard passed at ~2e-8, so Stage 3 faithfully reproduces whatever is on Drive now - which means the Stage 1 runs on Drive were regenerated after `RESULTS.md` was written. The Aircraft gap (+.019) is the same size as the entire Stage 3 end-to-end gain, so the two tables cannot be printed side by side until this is settled.
+**Remaining provenance discrepancy:** the current K=10 DINOv2 artifacts give DTD .7167, Aircraft .5285, Flowers-102 .9935, while the older Stage 1 aggregate table records .7181, .5096, .9932. Revision 2 passed validation and test replay within 1e-6 and bound every result to content signatures of the exact probe and feature caches, so the new paired Stage 3 deltas are valid. The older Stage 1 aggregate row still needs its artifact provenance reconciled.
 
 ## 0. Lock the Stage 3 experimental plan
 
@@ -13,7 +13,7 @@ Status: **run on Colab (2026-08-31), including the diagnostic sections; results 
 - [x] Choose one representative encoder per dataset: **DINOv2 ViT-S/14 everywhere**. Stage 2 measured that encoder choice dominates every other factor (+.14 to +.31 over ResNet-18), so the representative encoder is the one worth deploying. Feature dimension 384.
 - [x] Choose one training-set size: **K = 10**, the specification's suggested default, which is also a Stage 1 grid point so the baseline already exists on Drive.
 - [x] Choose a single number of Euler steps and use it throughout: **T = 12**, matching the `T` in Stage 2's headline figures. Training and inference use the same `T` for both strategies.
-- [x] Record the plan in a versioned config, following the `stage1_config.json` pattern. (`stage3` section, `config_revision: 1`, written on first run.)
+- [x] Record the plan in a versioned config, following the `stage1_config.json` pattern. (`stage3` section, `config_revision: 2`, committed in the shared config.)
 - [x] Create `06_fm_before_classifier.ipynb` as an independent notebook following the Drive-mount / cache-reuse / checkpoint-resume / skip-if-already-saved conventions of `01`, `02`, `04` and `05`.
 
 ## 1. Reuse Stage 1 artifacts - no new feature extraction, no classifier retraining
@@ -24,7 +24,8 @@ Status: **run on Colab (2026-08-31), including the diagnostic sections; results 
 - [x] Re-derive each K-shot subset with the identical seeded `balanced_indices(labels, k, seed)` logic Stage 1 used, rather than re-sampling.
 - [x] **Operate in the classifier's input space, not raw feature space.** Stage 1 selected a feature transform per run (`l2` or `standardize`) and trained the head on transformed features, so `z` in the Stage 3 diagram is a *transformed* feature. (`stage1_transform`, replayed from the saved mode plus statistics.)
 - [x] Guard the replay: recompute the transform statistics from the re-derived subset and compare against Stage 1's saved ones; raise if they drift by more than `1e-4`. (`build_stage3_inputs`.)
-- [x] **Fidelity guard (Section 4b).** Replay the complete Stage 1 inference path - cache, subset, transform, head - on the test split and require the result to match Stage 1's saved `test_accuracy` to within `1e-6` for every one of the 9 (dataset, seed) cells. This is the most important guard in the notebook: if the input space were reconstructed even slightly wrongly, every `ΔAcc` would be measured against the wrong baseline and the error would read as a Stage 3 result. Compare with a tolerance, never exactly - Stage 1 stored accuracies as float32 means.
+- [x] **Fidelity guard (Section 4b).** Replay the complete Stage 1 inference path on validation and test and require both accuracies to match Stage 1 within `1e-6` for every cell. After the guard, use exact integer-count ratios so an identity FM reports exactly zero `ΔAcc` rather than float32 serialization noise.
+- [x] Content-sign every loaded feature split and frozen probe, and include the combined signature in every Stage 3 run config so regenerated Stage 1 artifacts cannot silently reuse stale Stage 3 metrics.
 - [x] Add a loud failure (not a silent recompute) if a required Stage 1 feature cache or linear-probe run is missing, naming the notebook that produces it.
 
 ## 2. Velocity network initialized at the identity
@@ -38,7 +39,7 @@ Status: **run on Colab (2026-08-31), including the diagnostic sections; results 
 
 - [x] For each training feature `z`, run the complete `T`-step rollout to obtain `z_hat`, pass `z_hat` through the frozen classifier, and compute `L_cls = CE(W z_hat + b, y)`.
 - [x] Backpropagate through the complete rollout and update **only** the FM parameters. (No `detach` in the training path; the head carries `requires_grad=False`.)
-- [x] Implement the two regularizers the specification suggests - a penalty on the displacement `||z_hat - z||^2` and one on the mean predicted velocity magnitude - as configurable weights, defaulting to **zero**, so the required main result is the unregularized objective.
+- [x] Implement the two regularizers the specification suggests as scale-free penalties, dividing squared displacement and velocity magnitudes by `||z||^2`. Both weights default to **zero**, so the required main result remains unregularized.
 - [x] Document *why* the displacement penalty is worth having, beyond the specification suggesting it: when Stage 1 selected the `l2` transform, the head was only ever fit on unit-norm features, so an unregularized rollout can move `z_hat` off that sphere into regions where the head's logits are unconstrained and win training accuracy by exploiting the classifier rather than by improving the representation. Section 14 measures whether that happens instead of assuming it.
 
 ## 4. Strategy 2 - classifier-guided targets and standard FM training
@@ -50,7 +51,8 @@ Status: **run on Colab (2026-08-31), including the diagnostic sections; results 
 - [x] Recompute the targets as the FM changes during training, every `target_refresh_every` epochs over the whole training set.
 - [x] **Express the feature-space step size as a fraction of the mean training-feature norm, not as an absolute distance.** Stage 1 chooses the transform per run, so an absolute step of 0.5 is a 50% displacement under `l2` (`||z|| = 1`) but roughly 2.5% under `standardize` (`||z|| ~ sqrt(384)`). Making it relative keeps one configured number comparable across datasets and transforms. This was caught by the local test, not by reading the specification.
 - [x] Implement all three constraint modes the specification asks to experiment with - `none`, `unit`, `trust_region` - and default to `trust_region`. Rationale recorded in the notebook: under `none` already-confident samples take naturally small steps (their CE gradient is small), which is desirable, but raw gradient norms vary by orders of magnitude across samples; under `unit` every sample moves the same distance including correctly classified ones; `trust_region` keeps the gradient's own scaling while capping the worst case.
-- [x] Verify the guidance step actually does what it claims: a unit test asserts that the constructed target lowers the classification loss under all three constraint modes and both feature transforms.
+- [x] Source-anchor the default trust region so repeated refreshes cannot accumulate unbounded target drift; retain the lowest-CE feasible iterate and record the trust-region hit rate. Keep current-anchor and non-monotone variants in the sweep.
+- [x] Add an executable guard asserting source-bounded monotone targets and an active standard-FM gradient before the main grid starts.
 
 ## 5. Training, checkpointing and model selection
 
@@ -58,7 +60,7 @@ Status: **run on Colab (2026-08-31), including the diagnostic sections; results 
 - [x] **Evaluate and checkpoint epoch 0**, before any update. Because the FM is exactly the identity there, epoch 0 *is* the linear probe, and seeding the checkpoint with it makes the selection rule "keep the FM only if it helps on validation". This was added after the local test showed a run that only ever degraded still saved a degraded network.
 - [x] **State the consequence wherever results are reported:** validation `ΔAcc` is `>= 0` by construction, so only **test** `ΔAcc` carries information about whether Stage 3 helped. (Stated in the notebook title cell, in Section 8, and below in Section 8 of this file.)
 - [x] Report how many runs selected epoch 0 - i.e. learned nothing usable - rather than letting them disappear into a mean. (Section 10 prints the count and lists them.)
-- [x] Reuse Stage 2's checkpoint-resume convention: `latest.pt` / `best.pt`, resume only when the saved `config` matches exactly, and skip runs whose outputs already exist on Drive. Verified: re-running the grid cell loads all 18 runs from disk and retrains none.
+- [x] Reuse Stage 2's checkpoint-resume convention, but strengthen compatibility: the complete effective optimization config, implementation revision, and upstream artifact signature must match exactly. Revision 1 caches therefore cannot be reused by revision 2.
 - [x] Record per-epoch training loss, validation loss and validation accuracy to `history.csv` for every run.
 
 ## 6. Final evaluation and aggregation
@@ -80,8 +82,8 @@ Status: **run on Colab (2026-08-31), including the diagnostic sections; results 
 
 The specification calls its two strategies "structured starting points rather than fixed recipes" and encourages modifying details and comparing variants. Both sweeps run on **subset seed 0 only** - they are variant comparisons, not replacements for the three-seed main result.
 
-- [x] **Strategy 1 regularization** (Section 14, `RUN_REGULARIZATION_SWEEP`): unregularized vs. displacement penalty at 1e-2 and 1e-1 vs. velocity penalty at 1e-3, reporting accuracy *and* `relative_displacement` together, so the off-manifold hypothesis in Section 3 above is testable rather than rhetorical.
-- [x] **Strategy 2 guidance knobs** (Section 15, `RUN_GUIDANCE_SWEEP`): step size (0.02 / 0.1 / 0.30 of the feature norm), number of target-improvement steps (1 / 3 / 10), constraint mode (`trust_region` / `none` / `unit`), and refresh period (every epoch vs. every 10). One knob varied at a time from the default - these are the four choices the specification names.
+- [x] **Strategy 1 regularization** (Section 14): unregularized vs. relative displacement penalties at 1, 10 and 100 vs. relative velocity penalty at 1e-3, reporting accuracy and measured displacement together.
+- [x] **Strategy 2 guidance knobs** (Section 15): the four choices named by the specification plus current-anchor and non-monotone ablations, with trust-region hit rate reported.
 
 ## 9. Stage 2's optional analyses, adapted to Stage 3
 
@@ -189,13 +191,10 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   .92 and there was nothing to demonstrate. The second was training the toy probe without validation
   selection, which on a problem with no linear signal landed it *below* chance at .276 and inflated
   the flow's apparent gain; it now uses Stage 1's rule and sits at .458, where a line belongs.
-- [x] Report the three-way toy result rather than a flattering two-way one. Measured: probe .4583,
-  end-to-end .9896 (+.53), classifier-guided at the default guidance step .4583 (**+.0000** - it kept
-  the identity), classifier-guided at step 0.5 .8646 (+.41). The default failure is a **tuning
-  artifact, not a limitation of the method** - checked before reporting - and the toy is where the
-  reason is visible: the trust region caps how far the target may move per refresh, so too small a
-  step means the target creeps and the run early-stops before it has travelled anywhere useful. That
-  is the concrete justification for Section 15's sweep.
+- [x] Report the three-way toy result rather than a flattering two-way one. Revision 2 measured:
+  probe .4583, end-to-end .9948 (+.5365), classifier-guided at both the default step and step 0.5
+  .4583 (+.0000), with both guided runs selecting epoch 0. The earlier step-0.5 guided gain belonged
+  to revision 1's current-endpoint anchoring; it does not survive the source-anchored trust region.
 - [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
   the notebook. This exists because the skip-if-already-saved logic means a rerun does not re-execute
   the plotting cells' upstream work, so on a resumed run the figures would otherwise not reappear -
@@ -284,13 +283,10 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   .92 and there was nothing to demonstrate. The second was training the toy probe without validation
   selection, which on a problem with no linear signal landed it *below* chance at .276 and inflated
   the flow's apparent gain; it now uses Stage 1's rule and sits at .458, where a line belongs.
-- [x] Report the three-way toy result rather than a flattering two-way one. Measured: probe .4583,
-  end-to-end .9896 (+.53), classifier-guided at the default guidance step .4583 (**+.0000** - it kept
-  the identity), classifier-guided at step 0.5 .8646 (+.41). The default failure is a **tuning
-  artifact, not a limitation of the method** - checked before reporting - and the toy is where the
-  reason is visible: the trust region caps how far the target may move per refresh, so too small a
-  step means the target creeps and the run early-stops before it has travelled anywhere useful. That
-  is the concrete justification for Section 15's sweep.
+- [x] Report the three-way toy result rather than a flattering two-way one. Revision 2 measured:
+  probe .4583, end-to-end .9948 (+.5365), classifier-guided at both the default step and step 0.5
+  .4583 (+.0000), with both guided runs selecting epoch 0. The earlier step-0.5 guided gain belonged
+  to revision 1's current-endpoint anchoring; it does not survive the source-anchored trust region.
 - [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
   the notebook. This exists because the skip-if-already-saved logic means a rerun does not re-execute
   the plotting cells' upstream work, so on a resumed run the figures would otherwise not reappear -
@@ -350,7 +346,7 @@ including `fm_only`, where theirs has the classifier-only control but not the FM
 head evaluation; and we carry the outcome breakdown, per-class effects, displacement decomposition,
 flow-time curves, reverse flow and the 2D simulation, which have no counterpart there.
 
-## Verification performed before the Colab run
+## Verification performed before and during the Colab run
 
 Stage 3 was developed against a fabricated Stage 1 world - cached features plus linear-probe runs written in exactly the layout `01_linear_probe.ipynb` produces - so the code was known to run before consuming Colab time. Two suites, neither of which ships in the repository:
 
@@ -362,12 +358,9 @@ Three defects were found and fixed this way rather than on Colab: the missing ep
 
 ## Open items
 
-- [x] ~~Run `06_fm_before_classifier.ipynb` end to end on Colab over the real Stage 1 caches.~~ Done 2026-08-31.
-- [ ] **Rerun to populate Section 23 (video) and Section 25 (inline report)**, the only parts that postdate the run. The grid is cached, so this retrains nothing.
-- [ ] **Reconcile the Stage 1 baselines** between `doc/RESULTS.md` and the runs on Drive, per the note at the top of this file. Everything else waits on this, because ΔAcc is defined against those baselines.
-- [ ] **Transcribe the measured numbers into `doc/RESULTS.md`.** Until that happens the results exist only on Drive.
-- [ ] Record the measured Stage 3 results in `doc/RESULTS.md`, including the epoch-0 count from Section 10 and the paired-significance summary from Section 13.
-- [ ] Report the two variant sweeps: whether the displacement penalty changes anything, and which guidance knobs matter.
-- [ ] Report the joint fine-tuning extension **against the `head_only` control**, not against the Stage 1 probe.
-- [ ] Report the two optional analyses: the accuracy/margin curves over flow time with both endpoints anchored, whether `t*` beats `t=1`, and the two reverse-flow anchors with the pre-transport reference stated correctly.
-- [ ] If Stage 3 turns out not to beat the linear probe, say so plainly and explain the mechanism. The Stage 2 precedent is the honest framing to follow: "the FM layer is a real improvement over the prototype rule it replaces, not a replacement for a discriminatively trained classifier." Stage 3 asks a harder question than Stage 2 did - the linear probe was already the strongest method in the project at every full-data setting, and a frozen affine classifier applied to a representation it was itself fit on leaves little obvious headroom.
+- [x] Run implementation revision 2 end to end on Colab over the real Stage 1 caches.
+- [ ] **Reconcile the older Stage 1 aggregate table with the current signed artifacts.** This does not invalidate Stage 3's paired deltas: the run replayed the exact loaded heads within 1e-6.
+- [x] Transcribe the required results, epoch-0 count, and paired-significance summary into `doc/RESULTS.md`.
+- [x] Report both variant sweeps with displacement and trust-region binding diagnostics.
+- [x] Report joint fine-tuning against the `head_only` control with four-way attribution.
+- [x] Report flow-time, validation-selected `t*`, reverse-flow, and mechanism diagnostics.

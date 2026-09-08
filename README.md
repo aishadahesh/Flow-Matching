@@ -59,12 +59,22 @@ linear-probe run directories, so run `01_linear_probe.ipynb` first.
    The required grid is 3 datasets × DINOv2 ViT-S/14 × K=10 × T=12 × 3 subset seeds
    × 2 strategies = 18 trained velocity networks and 27 result rows.
 
-The classifier is loaded, never retrained, and frozen with `requires_grad_(False)`.
-The FM is initialized to the exact identity by zeroing the velocity network's output
-layer, so the untrained system reproduces the linear probe bit for bit. Two guards
-enforce this before any training starts, and both raise rather than warn: the
-reloaded probe must reproduce its Stage 1 test accuracy to within 1e-6, and the
-untrained rollout must be the identity.
+For the required comparison, the classifier is loaded, never retrained, and frozen
+with `requires_grad_(False)`. The FM is initialized to the exact identity by zeroing
+the velocity network's output layer, so the untrained system reproduces the linear
+probe bit for bit. The notebook raises on any failed guard: the reloaded probe must
+reproduce both Stage 1 validation and test accuracy within 1e-6, the untrained
+rollout must be the identity, Strategy 1 must backpropagate through the rollout only
+to the FM, and Strategy 2 must produce source-bounded monotone targets and an active
+standard-FM gradient.
+
+Classifier-guided targets use a trust region centred on the original source feature
+`z`, retain the lowest-cross-entropy feasible iterate, and record the trust-region
+hit rate. Strategy 1's displacement and velocity penalties are scale-free, so their
+strength is comparable for `l2` and standardized Stage 1 feature spaces. The optional
+guided joint-fine-tuning path uses a separate endpoint classification loss with the
+FM endpoint detached; this genuinely trains the classifier without changing the FM
+objective from standard flow matching.
 
 Beyond the required grid the notebook runs two variant sweeps, the optional
 joint-fine-tuning extension (with a head-only control, without which that comparison
@@ -72,8 +82,11 @@ cannot be read), and Stage 3 versions of Stage 2's two optional analyses — sam
 intermediate flow times, with a validation-selected stopping time, and the flow in
 reverse. All are flag-gated at the top of their sections (`RUN_REGULARIZATION_SWEEP`,
 `RUN_GUIDANCE_SWEEP`, `RUN_JOINT_FINETUNE`, `RUN_TSTAR_ABLATION`, `RUN_REVERSE_FLOW`),
-enabled by default. Completed runs are skipped by checking saved outputs on Drive; set
-`FORCE_RETRAIN = True` to rerun the grid from scratch.
+enabled by default. A completed run is reused only when its full effective training
+configuration, implementation revision, and content signatures of the Stage 1 probe
+and feature caches all match. Changed code, hyperparameters, or upstream artifacts
+therefore retrain automatically; set `FORCE_RETRAIN = True` to ignore even compatible
+cached runs.
 
 The intermediate-flow-time curve is anchored at both ends and asserts it: identity
 initialization makes `t=0` accuracy exactly the Stage 1 linear probe, and `t=1` exactly
@@ -88,13 +101,33 @@ fixed and a broken path sit in the same frame. MP4 where ffmpeg is available, GI
 otherwise. Section 23c is a 2D simulation - two concentric rings run through the same
 training code - where the frozen decision boundary and the learned velocity field
 can be drawn directly instead of projected. Section 25 reloads every saved table,
-figure and animation from Drive and renders them inline as one report — useful on a rerun, where the cached grid means the
-earlier plotting cells do not re-execute.
+figure and animation from Drive and renders them inline as one report.
 
-**Status: run on Colab (2026-08-31); the committed notebook carries its outputs, but
-the numbers are not yet transcribed into `doc/RESULTS.md`, and the Stage 1 baselines
-on Drive disagree with the Stage 1 table there — see `doc/TODO_stage3.md`.** Sections 23 and 25 postdate that run and need a rerun to
-populate; the grid is cached, so nothing retrains.
+**Status (2026-09-08): implementation revision 2 completed on Colab.** All 40 code
+cells executed without an error on a T4. The Stage 1 validation/test fidelity guards,
+identity guard, and both strategy-gradient guards passed; the required grid produced
+18 trained FM layers and 27 result rows, followed by 18 saved tables and 17 figures.
+
+| Dataset | Frozen linear probe | End-to-end rollout | Classifier-guided |
+|---|---:|---:|---:|
+| DTD | .7167 ± .0081 | .7167 (+.0000) | **.7238 (+.0071)** |
+| Aircraft | .5285 ± .0064 | **.5476 (+.0191)** | .5448 (+.0163) |
+| Flowers-102 | .9935 ± .0000 | .9935 (+.0000) | .9935 (+.0000) |
+
+Nine of the 18 selected FM checkpoints are epoch 0 and therefore exact identity maps:
+all six Flowers-102 runs and all three DTD end-to-end runs. Across the paired per-seed
+tests, end-to-end improves all three Aircraft splits significantly; guided FM improves
+all six DTD/Aircraft splits, with five bootstrap CIs and five McNemar tests excluding
+no change. Full results, controls, sweeps, and caveats are in `doc/RESULTS.md`.
+
+These Stage 3 probe values are the exact heads loaded by `06`, not replacements for the
+older Stage 1 aggregate table. The notebook replayed both validation and test accuracy
+within 1e-6 and content-signed the upstream artifacts; the historical aggregate-table
+discrepancy remains documented in `doc/TODO_stage3.md`.
+
+The lightweight source and synthetic-behaviour checks live in
+`tests/test_stage3_notebook.py`. Run them in an environment with PyTorch (Colab is
+fine) with `python tests/test_stage3_notebook.py`.
 
 Protocol is documented in `doc/DOC.md` Part III; every specification clause is
 mapped to where it is implemented in `doc/STAGE3_COMPLIANCE.md`, which also lists

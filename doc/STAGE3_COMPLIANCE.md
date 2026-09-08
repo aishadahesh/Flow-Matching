@@ -6,6 +6,9 @@ Every clause of `ref/part_3.pdf` mapped to where it is implemented, plus an expl
 
 The deliverable is **`06_fm_before_classifier.ipynb`**. Section numbers below refer to that notebook.
 
+**Review status (2026-09-08): implementation revision 2 is code-complete and measured.** All 40 code
+cells completed on Colab without an error; fidelity, identity, and strategy-gradient guards passed.
+
 ---
 
 ## Required protocol
@@ -40,19 +43,19 @@ The deliverable is **`06_fm_before_classifier.ipynb`**. Section numbers below re
 
 | Clause | Where | Status |
 |---|---|---|
-| Top-1 test accuracy for the probe and both Stage 3 methods | §10 | ✅ mean ± std over 3 subset seeds |
-| Change relative to the corresponding linear-probe baseline | §10 | ✅ ΔAcc paired per seed |
-| Representative training and validation curves for both methods | §11 | ✅ both, on separate axes |
-| Feature-space visualization: original `z` and transported `ẑ` for both methods | §12, §12b | ✅ |
+| Top-1 test accuracy for the probe and both Stage 3 methods | §10 | ✅ measured over all three seeds |
+| Change relative to the corresponding linear-probe baseline | §10 | ✅ paired per seed and reported |
+| Representative training and validation curves for both methods | §11 | ✅ measured and saved |
+| Feature-space visualization: original `z` and transported `ẑ` for both methods | §12, §12b | ✅ measured and saved |
 | Same test examples and class colors across all comparisons | §12 | ✅ one sample, one palette |
 | Embedding computed **jointly** over the before/after feature sets | §12 | ✅ joint fit, shared axis limits |
-| PCA or t-SNE | §12, §12b | ✅ both |
+| PCA or t-SNE | §12, §12b | ✅ both measured and saved |
 
 ### Optional extension
 
 | Clause | Where | Status |
 |---|---|---|
-| Unfreeze the pretrained linear classifier and jointly optimize FM + classifier | §16 | ✅ |
+| Unfreeze the pretrained linear classifier and jointly optimize FM + classifier | §16 | ✅ end-to-end CE updates both; guided FM regression plus detached-endpoint CE updates the head |
 | Compare with the **frozen-classifier setting** | §16 | ✅ `e2e__frozen`, `guided__frozen` rows |
 | Compare with the **original Stage 1 linear probe** | §16 | ✅ `linear_probe` row |
 | Experiment with different learning rates for the FM and classifier | §16b | ✅ head lr at 0.01× / 0.1× / 1.0× the FM lr |
@@ -105,5 +108,5 @@ Everything below is diagnostic or exploratory. None of it changes the required t
 - **Runs that kept the identity must be counted, not averaged away.** §10 prints how many of the 18 selected epoch 0.
 - **Flowers-102 at K=10 has one effective subset**, since the official train split is exactly 10 images per class; its `std = .0000` is by construction.
 - **The trust-region radius is chosen, not fitted.** §15 reports the hit rate; if it is near 1.0 the radius binds for essentially every sample and the Strategy 2 result depends materially on that number.
-- **Freezing the classifier does not freeze the model's capacity.** `W F_θ(z) + b` can represent a nonlinear decision boundary even with `W, b` fixed, because the FM warps the feature space. §23c demonstrates this directly: on concentric rings, which no line can separate, the frozen linear probe sits at .458 and the same frozen probe behind a trained FM reaches .990. Conclusions are therefore about this FM architecture at this operating point, not about "what a frozen linear classifier can do".
-- **The Stage 1 baselines on Drive currently disagree with the Stage 1 table in `doc/RESULTS.md`** (Aircraft .5285 vs .5096). The fidelity guard passes, so Stage 3 faithfully reproduces what is on Drive; the discrepancy means the Stage 1 runs were regenerated after `RESULTS.md` was written. This must be resolved before the two tables appear in one document — the gap is the same size as the entire Stage 3 end-to-end gain.
+- **Freezing the classifier does not freeze the model's capacity.** `W F_θ(z) + b` can represent a nonlinear decision boundary even with `W, b` fixed, because the FM warps the feature space. §23c demonstrates this directly: on concentric rings, which no line can separate, the frozen linear probe sits at .4583 and the same probe behind end-to-end FM reaches .9948. Conclusions are therefore about this FM architecture at this operating point, not about "what a frozen linear classifier can do".
+- **The current Stage 1 artifacts disagree with the older aggregate table** (most visibly Aircraft .5285 vs .5096). Revision 2 content-signed the exact probe and feature caches and passed validation/test replay within 1e-6, so its paired deltas are valid; do not place the two aggregate tables side by side as though they came from the same artifact set.
