@@ -6,8 +6,12 @@ Every clause of `ref/part_3.pdf` mapped to where it is implemented, plus an expl
 
 The deliverable is **`06_fm_before_classifier.ipynb`**. Section numbers below refer to that notebook.
 
-**Review status (2026-09-08): implementation revision 2 is code-complete and measured.** All 40 code
-cells completed on Colab without an error; fidelity, identity, and strategy-gradient guards passed.
+**Review status (2026-09-09): implementation revision 2 is measured; revision 3 is code-complete and
+awaiting a fresh run.** Revision 3 changes only details the specification explicitly invites varying:
+Strategy 1 displacement regularization and Strategy 2 step size, normalization, and constraint. The frozen classifier, required methods, datasets,
+encoder, K, T, splits, subsets, and reporting contract are unchanged.
+The 2026-09-09 replay used revision-2 source and loaded revision-2 caches; it reproduced the locked
+table but does not count as the pending revision-3 run.
 
 ---
 
@@ -28,7 +32,7 @@ cells completed on Colab without an error; fidelity, identity, and strategy-grad
 | From `z`, apply the FM for `T` Euler steps to obtain `ẑ`, then pass `ẑ` through the frozen classifier | §5, §8 | ✅ one shared integrator |
 | **Strategy 1**: run the complete rollout, compute `L_cls = CE(W ẑ + b, y)` | §6 | ✅ literal |
 | Backpropagate through the complete rollout, update only the FM parameters | §6 | ✅ no `detach` in the path; head frozen |
-| Optional: regularization penalizing displacement `z→ẑ` or velocity magnitude | §6, §14 | ✅ implemented, default 0, swept separately |
+| Optional: regularization penalizing displacement `z→ẑ` or velocity magnitude | §6, §14 | ✅ scale-free; revision 3 defaults to displacement λ=1 and reports λ=0 as a control |
 | **Strategy 2** step 1: run `z` through the current FM to obtain `ẑ` | §7 | ✅ |
 | step 2: pass `ẑ` through the frozen classifier, compute the classification loss | §7 | ✅ |
 | step 3: use the gradient w.r.t. `ẑ` to construct a nearby improved `ẑ'` | §7 | ✅ `torch.autograd.grad` in feature space, never parameter space |
@@ -76,6 +80,7 @@ cells completed on Colab without an error; fidelity, identity, and strategy-grad
 | Early-stopping patience | 40, vs Stage 2's 25 | Zero-initialized output means only the last layer has a gradient on the first step, so the first several epochs are nearly flat; Stage 2's patience risks stopping before the FM leaves the identity. |
 | Strategy 1 penalties | **relative**, `‖ẑ−z‖²/‖z‖²` | Stage 1 picks the transform per run, so an absolute λ would mean two different strengths on two datasets in the same table. |
 | Strategy 2 trust region | centred on the **source** `z` | Anchoring at `ẑ` bounds each refresh but not their accumulation, so across ~200 refreshes the target can drift arbitrarily far. Measured: source anchoring held total displacement at the radius 0.10, `ẑ` anchoring reached 2.17. |
+| Strategy 2 radius and step | independent per-sample fractions | Revision 3 uses `rho_i = radius_fraction * ||z_i||` and a unit-gradient step of `step_fraction * rho_i`, so a step-size ablation no longer changes the constraint radius at the same time. |
 | Strategy 2 target | lowest-CE iterate, not the last | A *projected* gradient step can be undone by the projection, so the final iterate may be worse than the start. |
 
 ---

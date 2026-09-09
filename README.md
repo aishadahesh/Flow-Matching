@@ -103,10 +103,19 @@ training code - where the frozen decision boundary and the learned velocity fiel
 can be drawn directly instead of projected. Section 25 reloads every saved table,
 figure and animation from Drive and renders them inline as one report.
 
-**Status (2026-09-08): implementation revision 2 completed on Colab.** All 40 code
-cells executed without an error on a T4. The Stage 1 validation/test fidelity guards,
-identity guard, and both strategy-gradient guards passed; the required grid produced
-18 trained FM layers and 27 result rows, followed by 18 saved tables and 17 figures.
+**Status (2026-09-09): implementation revision 2 completed on Colab on 2026-09-08; revision 3 is
+ready for a fresh run.** Revision 2 executed all 40 code cells without an error on a
+T4 and passed the fidelity, identity, and strategy-gradient guards. Revision 3 keeps
+the same required Stage 3 comparison but improves guided targets with independent
+per-sample radius and step fractions, unit-gradient steps inside the source-centred
+trust region, and corrected boundary/projection diagnostics. Its end-to-end main run
+uses the specification-permitted scale-free displacement penalty at λ=1, while the
+unregularized model remains an explicit control. The table below remains
+the locked revision-2 result until revision 3 is rerun from the top.
+The notebook replay saved on 2026-09-09 loaded revision-2 cached runs and reproduced that table;
+because its executed source still declared revision 2, it is a reproducibility check rather than a
+revision-3 measurement. The committed notebook has therefore been restored to revision 3 with stale
+outputs cleared.
 
 | Dataset | Frozen linear probe | End-to-end rollout | Classifier-guided |
 |---|---:|---:|---:|

@@ -465,6 +465,21 @@ dataset-seed pairs, the zero-velocity rollout reproduced the probe exactly, and 
 gradient guards passed. The required grid contains 18 trained FM layers and 27 rows; the full run
 also wrote 18 tables, 17 figures, and the rollout animations.
 
+**Revision 3 implementation note.** The guided target update has since been strengthened by separating
+the per-sample trust-region radius from the within-radius step fraction, combining unit-normalized
+classifier gradients with source-centred projection, and correcting the boundary/projection
+diagnostics. The end-to-end main run now uses the permitted scale-free displacement penalty at
+λ=1, motivated by both the revision-2 ablation and the external reference group's validation
+selection; λ=0 remains an explicit control. These changes remain within the flexibility granted by
+the Stage 3 specification, but they change both required training recipes and therefore require a
+fresh main grid. Every number below remains the locked revision-2 result until revision 3 is rerun
+and reported separately.
+
+**2026-09-09 replay audit.** The newly saved notebook execution used source/config revision 2 and
+reported every main-grid cell as `loaded`. It exactly reproduced the revision-2 headline results on
+an A100, but it did not execute the revision-3 recipes. Those outputs were cleared when the revision-3
+source was restored, preventing cached revision-2 measurements from being presented as new evidence.
+
 ## Required comparison - measured
 
 Top-1 accuracy on the complete official test split, DINOv2 ViT-S/14, K=10, T=12. Values are mean ±
@@ -516,9 +531,11 @@ at .058. Stronger penalties shrink both motion and gain. On DTD, the unregulariz
 identity, while a penalty of 10 selects a modest .7176 (+.0059) solution at displacement .071.
 Flowers remains flat under every setting.
 
-Guidance is sensitive to its chosen geometry. The default trust-region boundary is hit by 100% of
-DTD targets and 87.0%, 91.8%, and 93.7% of Aircraft targets, so the radius materially controls the
-result. On Aircraft seed 0, ten guidance steps or unit-normalized gradients reach .5569 (+.0240),
+Guidance is sensitive to its chosen geometry. In revision 2, the metric labelled “hit rate” records
+whether any proposal required projection, not whether the final selected target lies on the boundary:
+it is 100% on DTD and 87.0%, 91.8%, and 93.7% on Aircraft. These values still show strong pressure
+against the radius, but must not be read as final-boundary occupancy. Revision 3 separates those two
+rates. On Aircraft seed 0, ten guidance steps or unit-normalized gradients reach .5569 (+.0240),
 versus .5470 (+.0141) for the default; DTD's default is best or tied at +.0064. Every Flowers variant
 selects identity. These are seed-0 ablations, not replacements for the three-seed required table.
 

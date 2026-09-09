@@ -2,7 +2,7 @@
 
 This document covers the protocol for all three stages. **Part I** is Stage 1: classification baselines on frozen pretrained encoders, with no Flow Matching component. **Part II** is Stage 2: the Flow Matching layer added on top of the selected prototype baseline. **Part III** is Stage 3: a Flow Matching transformation inserted *before* the frozen Stage 1 linear classifier.
 
-All three stages are measured. Stage 3 implementation revision 2 completed on the real feature caches on 2026-09-08; its results and controls are reported in `RESULTS.md`.
+All three stages are measured. Stage 3 implementation revision 2 completed on the real feature caches on 2026-09-08; its results and controls are reported in `RESULTS.md`. A 2026-09-09 replay loaded those same revision-2 caches and reproduced the published table. Revision 3 improves the classifier-guided target parameterization and is awaiting a fresh run, so neither replay replaces those measurements yet.
 
 Measured results and their discussion are in `RESULTS.md`. Per-stage task tracking is in `TODO_stage1.md`, `TODO_stage2.md` and `TODO_stage3.md`.
 
@@ -546,8 +546,11 @@ through the frozen classifier, and minimize
 L = CE(W z_hat + b, y)  +  lambda_disp * mean_i ||z_hat_i - z_i||^2 / ||z_i||^2  +  (lambda_vel / T) * sum_k ||v(z_k, t_k)||^2 / mean_i ||z_i||^2
 ```
 
-backpropagating through all `T` sequential steps and updating only the FM parameters. Both penalty
-weights default to zero, so the required main result is the unregularized objective.
+backpropagating through all `T` sequential steps and updating only the FM parameters. Revision 3
+uses `lambda_disp = 1` and `lambda_vel = 0` in the main comparison. The specification explicitly
+permits displacement regularization; the value is fixed before the new run, motivated by the
+revision-2 Aircraft ablation and the external reference group's independent validation selection.
+The unregularized objective remains an explicit Section 14 control.
 
 Both penalties are **scale-free**: the displacement term is the per-sample relative squared displacement
 `||z_hat - z||^2 / ||z||^2`, not the absolute one, and the velocity term is divided by the mean
@@ -592,20 +595,23 @@ field that had already carried features away: source anchoring held total displa
 the radius, 0.10, while `z_hat` anchoring reached 2.17 - a 21x overshoot. The weaker behaviour is
 kept as `guidance_anchor='current'` so the difference is measured rather than argued.
 
-**The radius is per-sample and relative**, `rho_i = radius * ||z_i||`, and each gradient step is
-`step_fraction * rho_i`. Stage 1 chooses the feature transform per run, so an absolute radius would
-be a 50% displacement under `l2` (where `||z|| = 1`) and about 2.5% under `standardize` (where
-`||z||` is about `sqrt(384)`) - two different experiments in one table.
+**The radius and step are separate, per-sample relative quantities**: `rho_i = radius_fraction *
+||z_i||`, and a unit-normalized classifier-gradient step has length `step_fraction * rho_i`.
+Projection is an independent constraint rather than a side effect of the normalization mode. Stage 1
+chooses the feature transform per run, so an absolute radius would be a 50% displacement under `l2`
+(where `||z|| = 1`) and about 2.5% under `standardize` (where `||z||` is about `sqrt(384)`) - two
+different experiments in one table.
 
 **The target is the lowest-CE iterate, not the last one.** A *projected* gradient step is not
 guaranteed to reduce the loss, because the projection can undo it, so the final iterate can be worse
 than where it started. Measured: at conservative settings this changes nothing; at an aggressive
 radius it rescues a few percent of samples. It costs one extra forward pass per step.
 
-Every refresh records a **trust-region hit rate**, the fraction of targets sitting exactly on the
-boundary. If that is near 1.0 the radius binds for essentially every sample, which means the result
-depends materially on a number that was chosen rather than fitted - a fact that belongs in the
-write-up rather than in the config.
+Every refresh records a **trust-region hit rate**, the fraction of final selected targets sitting on
+the boundary, and a separate **projection rate**, the fraction of samples for which any proposal had
+to be projected. It also separates CE at the raw FM endpoint, the projected feasible start, and the
+selected guided target. If the boundary rate is near 1.0 the radius binds for essentially every
+sample, which means the result depends materially on a number that was chosen rather than fitted.
 
 ## 30. Stage 3 experimental protocol
 

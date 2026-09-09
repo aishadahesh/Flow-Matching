@@ -50,9 +50,11 @@ def stage3_namespace():
             "resume_training": False,
             "lambda_displacement": 0.0,
             "lambda_velocity": 0.0,
-            "guidance_step_size": 0.1,
+            "guidance_radius_fraction": 0.1,
+            "guidance_step_fraction": 0.5,
             "guidance_num_steps": 2,
-            "guidance_normalize": "trust_region",
+            "guidance_gradient_normalization": "unit",
+            "guidance_constraint": "trust_region",
             "guidance_anchor": "source",
             "guidance_monotone": True,
             "target_refresh_every": 1,
@@ -127,14 +129,43 @@ def test_guided_targets_are_source_bounded_and_monotone():
     head = nn.Linear(z_train.shape[1], 2)
     head.requires_grad_(False)
     net = ns["make_velocity_net"](z_train.shape[1])
-    scale = z_train.norm(dim=1).mean().item()
+    z_train = z_train * torch.linspace(0.25, 2.0, len(z_train)).unsqueeze(1)
+    z_train[0].zero_()
     targets, diag = ns["classifier_guided_targets"](
-        net, head, z_train, y_train, 4, 0.1, 3, "trust_region", scale,
+        net, head, z_train, y_train, 4, 0.1, 0.5, 3, "unit", "trust_region",
         anchor_mode="source", monotone=True,
     )
-    assert (targets - z_train).norm(dim=1).max().item() <= 0.1 * scale * (1 + 1e-5)
-    assert diag["guidance_target_ce_after"] <= diag["guidance_target_ce_before"] + 1e-6
+    rho = 0.1 * z_train.norm(dim=1)
+    assert bool(((targets - z_train).norm(dim=1) <= rho * (1 + 1e-5) + 1e-8).all())
+    assert torch.equal(targets[0], z_train[0])
+    assert diag["guidance_target_ce_after"] <= diag["guidance_target_ce_projected"] + 1e-6
     assert 0.0 <= diag["guidance_trust_region_hit_rate"] <= 1.0
+    assert 0.0 <= diag["guidance_projection_rate"] <= 1.0
+    assert diag["guidance_target_max_relative_displacement"] <= 0.1 * (1 + 1e-5)
+
+
+def test_guidance_step_and_constraint_are_independent():
+    ns = stage3_namespace()
+    z_train, y_train, *_ = synthetic_problem()
+    head = nn.Linear(z_train.shape[1], 2)
+    head.requires_grad_(False)
+    net = ns["make_velocity_net"](z_train.shape[1])
+
+    unconstrained, _ = ns["classifier_guided_targets"](
+        net, head, z_train, y_train, 4, 0.1, 0.5, 1, "unit", "none",
+        anchor_mode="source", monotone=False,
+    )
+    relative = (unconstrained - z_train).norm(dim=1) / z_train.norm(dim=1)
+    assert torch.allclose(relative, torch.full_like(relative, 0.05), atol=1e-5)
+
+    bounded, diag = ns["classifier_guided_targets"](
+        net, head, z_train, y_train, 4, 0.1, 2.0, 1, "unit", "trust_region",
+        anchor_mode="source", monotone=False,
+    )
+    bounded_relative = (bounded - z_train).norm(dim=1) / z_train.norm(dim=1)
+    assert torch.allclose(bounded_relative, torch.full_like(bounded_relative, 0.1), atol=1e-5)
+    assert diag["guidance_projection_rate"] == 1.0
+    assert diag["guidance_trust_region_hit_rate"] == 1.0
 
 
 def test_relative_displacement_penalty_is_scale_invariant():
@@ -162,7 +193,7 @@ def test_guided_joint_training_updates_the_classifier(tmp_path):
     frozen_head.requires_grad_(False)
     joint_head = copy.deepcopy(frozen_head)
     initial = {name: value.detach().clone() for name, value in joint_head.state_dict().items()}
-    run_config = {"test": "guided-joint", "revision": 2}
+    run_config = {"test": "guided-joint", "revision": 3}
     ns["train_stage3"](
         "guided", z_train, y_train, z_val, y_val, frozen_head, 4, tmp_path,
         run_config, init_seed=0, joint_head=joint_head, verbose=False,
@@ -179,6 +210,10 @@ def test_cache_config_covers_implementation_and_upstream_artifacts():
         "max_epochs",
         "early_stopping_patience",
         "effective_hyper",
+        "guidance_radius_fraction",
+        "guidance_step_fraction",
+        "guidance_gradient_normalization",
+        "guidance_constraint",
     ):
         assert required in text
 
@@ -188,8 +223,9 @@ if __name__ == "__main__":
 
     test_every_python_cell_parses()
     test_guided_targets_are_source_bounded_and_monotone()
+    test_guidance_step_and_constraint_are_independent()
     test_relative_displacement_penalty_is_scale_invariant()
     with tempfile.TemporaryDirectory() as directory:
         test_guided_joint_training_updates_the_classifier(Path(directory))
     test_cache_config_covers_implementation_and_upstream_artifacts()
-    print("5 Stage 3 checks passed")
+    print("6 Stage 3 checks passed")
