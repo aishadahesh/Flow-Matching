@@ -1,9 +1,10 @@
-"""Build doc/Stage1_Stage2_Report.pdf from the executed notebooks.
+"""Build doc/Stage1_Stage2_Report.pdf from the executed notebooks and Stage 3 record.
 
 Every accuracy, delta, count and confidence interval in the report is parsed out of the
-notebooks' own displayed result tables, so re-running this script after a Colab re-run
-refreshes the report rather than restating stale numbers. Only the diagrams (pages 2-3)
-and the prose are authored here.
+Stage 1-2 values are parsed from the notebooks' displayed result tables. Stage 3 values
+are parsed from the locked measured table in doc/RESULTS.md because the revision-3
+notebook intentionally contains no stale revision-2 outputs. Only diagrams and prose are
+authored here.
 
     python doc/build_report.py
 
@@ -30,6 +31,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 NB4 = ROOT / '04_flow_matching.ipynb'
 NB5 = ROOT / '05_flow_matching_clip.ipynb'
+RESULTS_MD = ROOT / 'doc' / 'RESULTS.md'
 OUT = ROOT / 'doc' / 'Stage1_Stage2_Report.pdf'
 
 # ----------------------------------------------------------------------------- palette
@@ -177,6 +179,49 @@ def f(x):
     return float(x.replace('+', '').replace('−', '-').rstrip('%'))
 
 
+def md_table_rows(header_prefix):
+    """Return body cells from one Markdown table in the locked results record."""
+    lines = RESULTS_MD.read_text(encoding='utf-8').splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(header_prefix))
+    rows = []
+    for line in lines[start + 2:]:
+        if not line.startswith('|'):
+            break
+        rows.append([cell.strip().replace('**', '').replace('`', '')
+                     for cell in line.strip().strip('|').split('|')])
+    if not rows:
+        raise LookupError(f'No rows found after Markdown table {header_prefix!r}')
+    return rows
+
+
+def first_number(cell):
+    match = re.search(r'[+-]?(?:\d+\.\d+|\.\d+|\d+)', cell.replace('−', '-'))
+    if not match:
+        raise ValueError(f'No numeric value in {cell!r}')
+    return float(match.group(0))
+
+
+class Stage3Data:
+    """Locked revision-2 Stage 3 results, parsed from doc/RESULTS.md."""
+
+    def __init__(self):
+        self.main = []
+        for row in md_table_rows('| Dataset | Stage 1 linear probe |'):
+            self.main.append(dict(dataset=row[0], probe=first_number(row[1]),
+                                  e2e=first_number(row[2]), e2e_delta=first_number(row[3]),
+                                  guided=first_number(row[4]), guided_delta=first_number(row[5])))
+        self.churn = []
+        for row in md_table_rows('| Dataset / strategy | Fixed | Broken | Net | Churn |'):
+            self.churn.append(dict(setting=row[0], fixed=first_number(row[1]),
+                                   broken=first_number(row[2]), net=first_number(row[3]),
+                                   churn=first_number(row[4])))
+        self.joint = []
+        for row in md_table_rows('| Dataset / method | Probe | FM only | Head only | Full joint |'):
+            self.joint.append(dict(setting=row[0], probe=first_number(row[1]),
+                                   fm_only=first_number(row[2]), head_only=first_number(row[3]),
+                                   joint=first_number(row[4]), attribution=row[5]))
+
+
 class Data:
     """Everything the report quotes, parsed once from the two notebooks."""
 
@@ -203,6 +248,8 @@ class Data:
         self.paired5 = nb_table_optional(NB5, 'def control_run(')
         self.tstar5 = nb_table_optional(NB5, 'validation_selected_tstar_summary.csv')
         self.flowtime5 = nb_table(NB5, 'intermediate_flow_time_metrics.csv')
+        # Stage 3's revision-2 measurements remain locked while revision 3 awaits a fresh run.
+        self.stage3 = Stage3Data()
 
     # -- derived counts, computed rather than asserted -------------------------------
     def best_fm(self, ds, enc, shot):
@@ -331,7 +378,7 @@ class Page:
         self.y -= 0.0255 * (body.count(chr(10)) + 1) + 0.014
 
     def footer(self):
-        self.text(0.055, 0.045, 'Flow Matching as a classification layer  ·  Stages 1–2',
+        self.text(0.055, 0.045, 'Flow Matching as a classification layer  -  Stages 1-3',
                   size=8, color=FAINT)
         self.text(0.945, 0.045, str(self.number), size=8.5, color=FAINT, ha='right')
 
@@ -456,13 +503,13 @@ def page_cover(pdf, d, n):
                              facecolor=INK, edgecolor='none'))
     p.text(0.055, 0.9785, 'CVLAB SUMMER PROJECT', size=9, color='#ffffff',
            weight='bold', va='center')
-    p.text(0.945, 0.9785, 'STAGES 1 & 2', size=9, color=FAINT, weight='bold',
+    p.text(0.945, 0.9785, 'STAGES 1-3', size=9, color=FAINT, weight='bold',
            va='center', ha='right')
 
     p.text(0.055, 0.90, 'Flow Matching as a', size=38, weight='bold')
     p.text(0.055, 0.815, 'Classification Layer', size=38, weight='bold')
     p.text(0.055, 0.735,
-           'Stage 1 — frozen-encoder baselines  ·  Stage 2 — an FM layer on top of them',
+           'Stage 1 - baselines  ·  Stage 2 - prototype transport  ·  Stage 3 - FM before a frozen classifier',
            size=12.5, color=MUTED)
 
     total, improved, flat, regressed = d.cell_counts
@@ -492,13 +539,10 @@ def page_cover(pdf, d, n):
 
     p.text(0.055, 0.44, 'What this report contains', size=13, weight='bold')
     p.note(0.055, 0.405, 0.42,
-           'The method and the two training objectives, drawn; the experimental protocol; and every '
-           'measured result from the executed notebooks. All accuracies are top-1 on the complete '
-           'official test splits.\n\n'
-           'Every number, count and interval in this document is parsed out of the notebooks\' own '
-           'result tables by doc/build_report.py — none of them is typed by hand. The diagrams on the '
-           'next two pages are drawn for this report; every scatter, curve, trajectory and animation '
-           'figure is a real run output.')
+           'The Stage 1 baselines, both Stage 2 branches, and the Stage 3 frozen-classifier experiment. '
+           'All accuracies are top-1 on complete official test splits.\n\n'
+           'Stage 1-2 values are parsed from executed notebook tables. Stage 3 values are parsed from '
+           'the locked revision-2 record in doc/RESULTS.md; revision 3 is clearly marked as pending.')
 
     p.callout(0.50, 0.435, 0.445, 0.30, 'The headline result, stated honestly',
               f'The FM layer improves on the prototype baseline it replaces in {improved} of {total} '
@@ -1475,12 +1519,172 @@ def page_scope(pdf, d, n):
         p.text(0.540, y - 0.028, wrapped, size=8.6, color=MUTED, linespacing=1.55)
         y -= 0.046 + 0.0192 * (wrapped.count(NL) + 1)
 
-    p.callout(0.055, 0.148, 0.89, 0.084, None,
-              'Every number in this report is parsed from the executed notebooks by doc/build_report.py; '
-              'the diagrams on pages 2–3 are drawn for this document, and every scatter, trajectory, '
-              'curve and animation figure is a real run output. Section 5b of 04_flow_matching.ipynb '
-              'verifies that all 42 (dataset, encoder, K, seed) combinations reuse Stage 1\'s exact '
-              'K-shot subsets, to a maximum prototype-reconstruction drift of 0.00e+00.', accent=MUTED)
+    p.close()
+
+
+def page_stage3_protocol(pdf, d, n):
+    p = Page(pdf, n, 'stage 3 - method and protocol')
+    p.title('FM before a frozen linear classifier')
+    p.lead('Stage 3 asks whether a nonlinear flow can reshape frozen encoder features into a '
+           'representation that the already-trained Stage 1 linear head handles better. The classifier '
+           'is frozen for the required comparison; only the velocity network learns.')
+
+    boxes = [
+        (0.060, 0.735, 0.245, 'Frozen encoder feature', 'z\nStage 1 transform replayed', BLUE),
+        (0.377, 0.735, 0.245, 'Flow Matching layer', 'T = 12 Euler steps\nidentity initialisation', PURPLE),
+        (0.694, 0.735, 0.245, 'Frozen Stage 1 head', 'W z_hat + b\nclassifier logits', GREEN),
+    ]
+    for x, y, w, title, body, accent in boxes:
+        p.callout(x, y, w, 0.125, title, body, accent=accent, size=9.0)
+    for x0, x1 in ((0.305, 0.377), (0.622, 0.694)):
+        p.ax.add_patch(FancyArrowPatch((x0, 0.672), (x1, 0.672), arrowstyle='-|>',
+                                      mutation_scale=13, lw=1.5, color=INK,
+                                      transform=p.ax.transAxes))
+
+    p.callout(0.055, 0.565, 0.425, 0.215, 'Strategy 1 - rolled-out classification',
+              'Run the complete FM rollout, classify z_hat with the frozen head, and backpropagate '
+              'cross-entropy through all Euler steps into the FM only. Revision 3 adds a scale-free '
+              'relative displacement penalty with lambda = 1; lambda = 0 remains a control.',
+              accent=BLUE, size=9.0)
+    p.callout(0.520, 0.565, 0.425, 0.215, 'Strategy 2 - classifier-guided targets',
+              'Use the classifier gradient with respect to z_hat to construct a nearby lower-loss '
+              'target z_hat-prime, then train standard conditional FM from z to that target. Targets '
+              'are refreshed as the FM changes. Revision 3 separates radius, step, normalization, '
+              'and projection.', accent=PURPLE, size=9.0)
+
+    rows = [
+        ['Data', 'same Stage 1 splits and K-shot subsets; seeds 0, 1, 2'],
+        ['Operating point', 'DINOv2 ViT-S/14, K = 10, T = 12'],
+        ['Main comparison', 'linear probe vs end-to-end FM vs guided FM'],
+        ['Safety checks', 'probe fidelity, frozen gradients, exact identity, source bounds'],
+        ['Reporting', 'test accuracy and delta, curves, joint PCA and t-SNE'],
+    ]
+    p.table(0.055, 0.300, ['requirement', 'implementation'], rows, [0.145, 0.745],
+            align=['left', 'left'], row_h=0.034, size=8.8, bold_first=True)
+    p.close()
+
+
+def page_stage3_results(pdf, d, n):
+    s3 = d.stage3
+    p = Page(pdf, n, 'stage 3 - measured revision 2')
+    p.title('The frozen-classifier comparison')
+    p.lead('Top-1 test accuracy on the complete official split, averaged over the paired Stage 1 '
+           'subset seeds 0, 1, and 2. Every delta uses the exact frozen probe loaded for that seed.')
+
+    rows = []
+    for r in s3.main:
+        rows.append([r['dataset'], f"{r['probe']:.4f}",
+                     f"{r['e2e']:.4f}", f"++{r['e2e_delta']:+.4f}",
+                     f"{r['guided']:.4f}", f"++{r['guided_delta']:+.4f}"])
+    p.table(0.055, 0.755, ['dataset', 'probe', 'end-to-end', 'delta', 'guided', 'delta'], rows,
+            [0.150, 0.105, 0.135, 0.105, 0.125, 0.105], row_h=0.040, size=9.1,
+            bold_first=True)
+
+    labels = [r['dataset'] for r in s3.main]
+    y = range(len(labels))
+    ax = p.axes(0.070, 0.555, 0.405, 0.255)
+    width = 0.23
+    ax.barh([v + width for v in y], [r['probe'] for r in s3.main], height=width,
+            color=FAINT, label='linear probe')
+    ax.barh(list(y), [r['e2e'] for r in s3.main], height=width, color=BLUE, label='end-to-end')
+    ax.barh([v - width for v in y], [r['guided'] for r in s3.main], height=width,
+            color=PURPLE, label='guided')
+    ax.set_yticks(list(y), labels); ax.set_xlim(0.45, 1.02); ax.set_xlabel('top-1 accuracy', size=8)
+    ax.legend(fontsize=7, frameon=False, loc='lower right')
+    ax.set_title('Accuracy', fontsize=10, weight='bold', loc='left')
+
+    ax2 = p.axes(0.555, 0.555, 0.375, 0.255)
+    yy = range(len(labels))
+    ax2.barh([v + 0.16 for v in yy], [100 * r['e2e_delta'] for r in s3.main],
+             height=0.30, color=BLUE, label='end-to-end')
+    ax2.barh([v - 0.16 for v in yy], [100 * r['guided_delta'] for r in s3.main],
+             height=0.30, color=PURPLE, label='guided')
+    ax2.set_yticks(list(yy), labels); ax2.axvline(0, color=INK, lw=0.8)
+    ax2.set_xlabel('percentage-point gain', size=8)
+    ax2.set_title('Delta against the paired probe', fontsize=10, weight='bold', loc='left')
+    ax2.legend(fontsize=7, frameon=False, loc='lower right')
+
+    p.callout(0.055, 0.245, 0.425, 0.135, 'Aircraft - the clearest gain',
+              'End-to-end adds 1.91 points and guided FM adds 1.63. Every Aircraft seed improves under '
+              'both strategies, with paired bootstrap intervals excluding zero and significant exact '
+              'McNemar tests.', accent=GREEN, size=8.8)
+    p.callout(0.520, 0.245, 0.425, 0.135, 'Selective, not universal',
+              'Guided FM adds 0.71 points on DTD; end-to-end keeps identity. Flowers-102 stays at '
+              '99.35%, a useful ceiling control. No required revision-2 run regresses on test.',
+              accent=AMBER, size=8.8)
+    p.close()
+
+
+def page_stage3_behavior(pdf, d, n):
+    s3 = d.stage3
+    p = Page(pdf, n, 'stage 3 - evidence and behavior')
+    p.title('How the gains happen')
+    p.lead('Accuracy alone hides whether the flow makes a few precise corrections or rewrites many '
+           'predictions. Paired tests, fixed/broken counts, displacement, and flow-time curves expose '
+           'that difference.')
+
+    churn_rows = [[r['setting'], f"{r['fixed']:.1f}", f"{r['broken']:.1f}",
+                   f"{r['net']:.1f}", f"{r['churn']:.1f}"] for r in s3.churn]
+    p.table(0.055, 0.745, ['dataset / strategy', 'fixed', 'broken', 'net', 'churn'], churn_rows,
+            [0.220, 0.065, 0.065, 0.065, 0.075], row_h=0.037, size=8.7, bold_first=True)
+    p.callout(0.575, 0.745, 0.370, 0.170, 'Nine of eighteen keep identity',
+              'All three DTD end-to-end runs and all six Flowers runs select epoch 0. Because epoch 0 '
+              'is the exact linear probe, validation cannot force a harmful transformation. Only test '
+              'delta is informative.', accent=MUTED, size=8.7)
+
+    p.callout(0.055, 0.505, 0.425, 0.175, 'Power versus restraint',
+              'Aircraft end-to-end moves features by a mean relative distance of .894 and changes '
+              '463.7 predictions. Guided FM moves .082 and changes 153.7, yet retains most of the '
+              'accuracy gain. DTD guided moves only .061.', accent=BLUE, size=8.8)
+    p.callout(0.520, 0.505, 0.425, 0.175, 'Paired evidence',
+              'End-to-end has 3 positive, 0 negative, and 6 identity cells; all 3 positives are '
+              'significant. Guided has 6 positive, 0 negative, and 3 identity cells; 5 of 6 positives '
+              'are significant. DTD seed 1 is the lone borderline case.', accent=GREEN, size=8.8)
+
+    p.callout(0.055, 0.285, 0.425, 0.165, 'Regularization points to revision 3',
+              'On Aircraft seed 0, lambda-displacement = 1 raises .5518 to .5563 while reducing '
+              'relative motion from .906 to .058. On DTD, lambda = 10 produces a smaller +.0059 gain. '
+              'These are single-seed ablations, not replacements for the main table.', accent=PURPLE,
+              size=8.6)
+    p.callout(0.520, 0.285, 0.425, 0.165, 'The endpoint can overshoot',
+              'Validation-selected flow time helps only Aircraft end-to-end: .5476 at t = 1 becomes '
+              '.5513 at mean t-star = .694. Guided Aircraft selects the full endpoint. The lesson is '
+              'specific rather than universal: aggressive rollout benefits from earlier stopping.',
+              accent=AMBER, size=8.6)
+    p.close()
+
+
+def page_stage3_joint(pdf, d, n):
+    s3 = d.stage3
+    p = Page(pdf, n, 'stage 3 - optional extension and status')
+    p.title('Joint fine-tuning, attribution, and what remains')
+    p.lead('After the required frozen-head grid, the optional extension unfreezes a copy of the Stage 1 '
+           'classifier. A head-only control prevents extra classifier training from being mistaken for '
+           'a Flow Matching gain.')
+
+    rows = [[r['setting'], f"{r['probe']:.4f}", f"{r['fm_only']:.4f}",
+             f"{r['head_only']:.4f}", f"{r['joint']:.4f}", r['attribution']]
+            for r in s3.joint]
+    p.table(0.055, 0.740, ['dataset / method', 'probe', 'FM only', 'head only', 'joint', 'attribution'],
+            rows, [0.220, 0.080, 0.090, 0.095, 0.080, 0.190], row_h=0.037, size=8.4,
+            bold_first=True, align=['left', 'right', 'right', 'right', 'right', 'left'])
+
+    p.callout(0.055, 0.475, 0.425, 0.165, 'What the optional extension shows',
+              'Aircraft end-to-end and DTD guided gains remain almost entirely attributable to the FM. '
+              'Aircraft guided benefits from both components: the full joint model reaches .5487, '
+              'above either FM-only (.5396) or head-only (.5331).', accent=GREEN, size=8.7)
+    p.callout(0.520, 0.475, 0.425, 0.165, 'Variants implemented',
+              'Classifier learning rates at .01x, .1x, and 1x the FM rate; unfreezing at epochs 1, 10, '
+              'and 30; and anchoring penalties on the distance from the original Stage 1 weights. '
+              'These remain optional and never replace the frozen-head table.', accent=BLUE, size=8.7)
+
+    p.callout(0.055, 0.255, 0.890, 0.145, 'Revision status - do not mix the two',
+              'The table in this chapter is implementation revision 2, measured on 2026-09-08 and '
+              'reproduced from cache on 2026-09-09. Revision 3 is code-complete but unmeasured: it uses '
+              'lambda-displacement = 1 for the main end-to-end run and independent per-sample guidance '
+              'radius, step, unit-gradient normalization, and trust-region projection. A fresh run must '
+              'train rather than load revision-2 caches before its results can replace these numbers.',
+              accent=RED, size=8.8)
     p.close()
 
 
@@ -1490,7 +1694,8 @@ PAGES = [
     page_probe_comparison, page_clip, page_geometry_pca, page_geometry_tsne,
     page_trajectories, page_clip_geometry, page_flow_time, page_mechanism,
     page_snapshots, page_overshoot, page_ablation_geometry, page_reverse,
-    page_animation, page_summary, page_scope,
+    page_animation, page_summary, page_scope, page_stage3_protocol,
+    page_stage3_results, page_stage3_behavior, page_stage3_joint,
 ]
 
 
@@ -1501,9 +1706,9 @@ def main():
             fn(pdf, data, i)
             print(f'  page {i:2d}  {fn.__name__}')
         pdf.infodict().update({
-            'Title': 'Flow Matching as a Classification Layer — Stages 1 and 2',
+            'Title': 'Flow Matching as a Classification Layer - Stages 1, 2, and 3',
             'Author': 'CVLAB summer project',
-            'Subject': 'Stage 1 frozen-encoder baselines and a Stage 2 flow-matching layer',
+            'Subject': 'Stage 1 baselines, Stage 2 prototype transport, and Stage 3 FM before a frozen classifier',
         })
     print(f'\nwrote {OUT}  ({OUT.stat().st_size / 1e6:.2f} MB, {len(PAGES)} pages)')
 

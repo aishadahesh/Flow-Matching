@@ -68,12 +68,15 @@ rollout must be the identity, Strategy 1 must backpropagate through the rollout 
 to the FM, and Strategy 2 must produce source-bounded monotone targets and an active
 standard-FM gradient.
 
-Classifier-guided targets use a trust region centred on the original source feature
-`z`, retain the lowest-cross-entropy feasible iterate, and record the trust-region
-hit rate. Strategy 1's displacement and velocity penalties are scale-free, so their
+Classifier-guided targets use a per-sample trust-region radius centred on the original
+source feature `z`, with an independent within-radius step fraction. Gradient
+normalization and projection are separate choices; the default combines unit-gradient
+steps with source-centred projection and retains the lowest-cross-entropy feasible
+iterate. Proposal projection incidence and final-boundary occupancy are reported
+separately. Strategy 1's displacement and velocity penalties are scale-free, so their
 strength is comparable for `l2` and standardized Stage 1 feature spaces. The optional
-guided joint-fine-tuning path uses a separate endpoint classification loss with the
-FM endpoint detached; this genuinely trains the classifier without changing the FM
+guided joint-fine-tuning path uses a separate endpoint classification loss with the FM
+endpoint detached; this genuinely trains the classifier without changing the FM
 objective from standard flow matching.
 
 Beyond the required grid the notebook runs two variant sweeps, the optional
@@ -142,3 +145,8 @@ Protocol is documented in `doc/DOC.md` Part III; every specification clause is
 mapped to where it is implemented in `doc/STAGE3_COMPLIANCE.md`, which also lists
 what is deliberately *not* part of the required experiment; task tracking in
 `doc/TODO_stage3.md`.
+
+The consolidated PDF report is `doc/Report.pdf` (legacy filename). It
+now contains Stages 1, 2, and 3, including the Stage 3 protocol, required result table,
+training-behavior analysis, optional joint extension, and the revision-2/revision-3
+status distinction. Rebuild it with `python doc/build_report.py` after results change.
