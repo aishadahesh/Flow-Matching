@@ -1,20 +1,14 @@
 # Flow Matching as a Classification Layer
 
-This Computer Vision LAB summer project investigates a focused question: **can Flow Matching improve image classification by reshaping frozen pretrained features, without fine-tuning the image encoder?**
+This Computer Vision LAB summer project asks: **Can Flow Matching improve image classification?**
 
-The study progresses through three stages:
+The project has three stages. Stage 1 establishes frozen-feature baselines, Stage 2 learns flows toward class prototypes, and Stage 3 places a flow before a trained linear classifier. The experiments cover DTD, FGVC-Aircraft, and Oxford Flowers-102 using ResNet-18, DINOv2 ViT-S/14, and a separate CLIP RN50 branch.
 
-1. **Establish strong baselines.** Stage 1 compares linear probes, image-derived class prototypes, and zero-shot CLIP on frozen representations.
-2. **Learn transport toward class prototypes.** Stage 2 trains Flow Matching models to move image features toward image or CLIP text prototypes, then evaluates whether that transport improves classification over fair controls.
-3. **Improve a frozen classifier.** Stage 3 places an identity-initialized flow before an already-trained linear probe and tests whether nonlinear feature transport can improve its predictions while the classifier remains fixed.
-
-The experiments cover DTD, FGVC-Aircraft, and Oxford Flowers-102. ResNet-18 and DINOv2 ViT-S/14 are evaluated across the main Stage 1 and Stage 2 grid, while a separate CLIP RN50 branch studies image-to-text-prototype transport. Stage 3 focuses on the stronger DINOv2 representation.
-
-All three stages and their optional analyses have been executed. For a visual overview, read the [illustrated project report](doc/Report.pdf). Detailed measurements are collected in the [complete results record](doc/RESULTS.md), while the [protocol and design notes](doc/DOC.md) explain the experimental decisions and safeguards.
+All stages and optional analyses have been executed. See the [complete results](doc/RESULTS.md) and [protocol and design notes](doc/DOC.md) for details.
 
 ## Abstract
 
-The central question is whether Flow Matching can improve discriminative classification without changing a pretrained image encoder. The answer is qualified:
+The central question is whether Flow Matching can improve image classification. Across these experiments, the answer is qualified:
 
 - Representation quality matters most. DINOv2 improves over ResNet-18 by 14-31 percentage points across the Stage 1 grid.
 - Prototype-targeted FM is useful when the original prototype classifier is weak. Its largest Stage 2 improvement is +24.3 points on full-data Aircraft/DINOv2.
@@ -597,7 +591,6 @@ The displacement decomposition rules out a trivial global-shift explanation for 
 | `05_flow_matching_clip.ipynb` | Stage 2 CLIP extension with same-supervision controls |
 | `06_fm_before_classifier.ipynb` | Stage 3 frozen-classifier comparison, variants, and optional analyses |
 | `stage1_config.json` | Shared experiment plan and per-stage configuration |
-| `doc/Report.pdf` | Illustrated 28-page report covering all stages |
 | `doc/RESULTS.md` | Full numerical result and interpretation record |
 | `doc/DOC.md` | Protocol, design decisions, and failure modes |
 | `doc/STAGE2_COMPLIANCE.md` | Stage 2 specification-to-implementation map |
