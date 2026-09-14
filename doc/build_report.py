@@ -1,10 +1,8 @@
-"""Build doc/Stage1_Stage2_Report.pdf from the executed notebooks and Stage 3 record.
+"""Build doc/Report.pdf and README figures from the executed notebooks.
 
-Every accuracy, delta, count and confidence interval in the report is parsed out of the
 Stage 1-2 values are parsed from the notebooks' displayed result tables. Stage 3 values
-are parsed from the locked measured table in doc/RESULTS.md because the revision-3
-notebook intentionally contains no stale revision-2 outputs. Only diagrams and prose are
-authored here.
+are parsed from the measured revision-3 record in doc/RESULTS.md. Only diagrams and prose
+are authored here.
 
     python doc/build_report.py
 
@@ -29,10 +27,16 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
+NB1 = ROOT / '01_linear_probe.ipynb'
+NB2 = ROOT / '02_image_prototypes.ipynb'
+NB3 = ROOT / '03_zero_shot_clip.ipynb'
 NB4 = ROOT / '04_flow_matching.ipynb'
 NB5 = ROOT / '05_flow_matching_clip.ipynb'
+NB6 = ROOT / '06_fm_before_classifier.ipynb'
 RESULTS_MD = ROOT / 'doc' / 'RESULTS.md'
-OUT = ROOT / 'doc' / 'Stage1_Stage2_Report.pdf'
+OUT = ROOT / 'doc' / 'Report.pdf'
+README_FIGURES = ROOT / 'doc' / 'figures'
+README_MEDIA = ROOT / 'doc' / 'media'
 
 # ----------------------------------------------------------------------------- palette
 INK = '#14181f'
@@ -162,6 +166,32 @@ def nb_image(nbfile, cell, which=0):
     return mpimg.imread(io.BytesIO(data), format='png')
 
 
+def nb_video(nbfile, cell, which=0):
+    """Return an MP4 embedded by an executed notebook cell."""
+    cell = cell_index(nbfile, cell)
+    videos = []
+    for output in _cells(nbfile)[cell].get('outputs', []):
+        html = output.get('data', {}).get('text/html', '')
+        html = ''.join(html) if isinstance(html, list) else html
+        videos.extend(re.findall(r'data:video/mp4;base64,([A-Za-z0-9+/=]+)', html))
+    if len(videos) <= which:
+        raise LookupError(f'{nbfile.name} cell {cell}: embedded MP4 {which} not found')
+    return base64.b64decode(videos[which])
+
+
+def nb_gif(nbfile, cell, which=0):
+    """Return a GIF embedded by an executed notebook cell."""
+    cell = cell_index(nbfile, cell)
+    gifs = []
+    for output in _cells(nbfile)[cell].get('outputs', []):
+        html = output.get('data', {}).get('text/html', '')
+        html = ''.join(html) if isinstance(html, list) else html
+        gifs.extend(re.findall(r'data:image/gif;base64,([A-Za-z0-9+/=]+)', html))
+    if len(gifs) <= which:
+        raise LookupError(f'{nbfile.name} cell {cell}: embedded GIF {which} not found')
+    return base64.b64decode(gifs[which])
+
+
 def nb_gif_frames(nbfile, cell, which=0, frames=(0, 4, 8, 12)):
     cell = cell_index(nbfile, cell)
     htmls = [o for o in _cells(nbfile)[cell].get('outputs', [])
@@ -202,7 +232,7 @@ def first_number(cell):
 
 
 class Stage3Data:
-    """Locked revision-2 Stage 3 results, parsed from doc/RESULTS.md."""
+    """Measured revision-3 Stage 3 results, parsed from doc/RESULTS.md."""
 
     def __init__(self):
         self.main = []
@@ -248,8 +278,22 @@ class Data:
         self.paired5 = nb_table_optional(NB5, 'def control_run(')
         self.tstar5 = nb_table_optional(NB5, 'validation_selected_tstar_summary.csv')
         self.flowtime5 = nb_table(NB5, 'intermediate_flow_time_metrics.csv')
-        # Stage 3's revision-2 measurements remain locked while revision 3 awaits a fresh run.
+        # Stage 3 revision 3 was executed end-to-end on 2026-09-14.
         self.stage3 = Stage3Data()
+
+    @property
+    def clip_paired_counts(self):
+        sig = [r for r in self.paired5 if r['significant'] == 'True']
+        fm = sum(1 for r in sig if f(r['mean_delta']) > 0)
+        control = sum(1 for r in sig if f(r['mean_delta']) < 0)
+        degenerate = sum(1 for r in sig if f(r['std_delta']) == 0)
+        return dict(total=len(self.paired5), fm=fm, control=control,
+                    unresolved=len(self.paired5) - len(sig), degenerate=degenerate)
+
+    @property
+    def clip_tstar_counts(self):
+        gains = [f(r['gain']) for r in self.tstar5]
+        return sum(v > 0 for v in gains), len(gains), statistics.mean(gains), max(gains)
 
     # -- derived counts, computed rather than asserted -------------------------------
     def best_fm(self, ds, enc, shot):
@@ -273,7 +317,10 @@ class Data:
         n = len(self.paired)
         pos = sum(1 for r in self.paired if f(r['mean_delta']) > 0)
         sig = [r for r in self.paired if r['significant'] == 'True']
-        degen = [r for r in sig if f(r['std_delta']) == 0.0]
+        # Only K=10 Flowers cells with one effective subset are degenerate by
+        # construction. A full-data cell can happen to have zero observed spread
+        # across three independent initialisations without being degenerate.
+        degen = [r for r in sig if r.get('effective_repetitions') == '1']
         per_ds = {}
         for ds in ('aircraft', 'flowers102', 'dtd'):
             sub = [r for r in self.paired if r['dataset'] == ds]
@@ -514,13 +561,14 @@ def page_cover(pdf, d, n):
 
     total, improved, flat, regressed = d.cell_counts
     ci = d.ci_counts
-    n_img, n_clip, n_total = d.network_counts
+    n_img, n_clip, n_stage3 = (*d.network_counts[:2], 18)
+    n_total = n_img + n_clip + n_stage3
     best_acc, best_delta = d.best_fm('aircraft', 'dinov2_vits14', 'full')
     tiles = [
         ('3 × 2', 'datasets × encoders',
          'DTD, FGVC-Aircraft, Flowers-102\nResNet-18, DINOv2 ViT-S/14'),
-        (f'{n_total}', 'velocity networks trained',
-         f'{n_img}  image-prototype branch{NL}{n_clip}  CLIP text-prototype branch'),
+        (f'{n_total}', 'FM networks in main grids',
+         f'{n_img} image-prototype · {n_clip} CLIP{NL}{n_stage3} Stage 3 frozen-classifier'),
         (f'+{best_delta * 100:.1f}', 'points, best ΔAcc',
          'FGVC-Aircraft / DINOv2, full data\nover the Stage 1 prototype baseline'),
         (f'{ci["genuine"]} / {ci["n"]}', 'cells that survive a paired CI',
@@ -542,7 +590,7 @@ def page_cover(pdf, d, n):
            'The Stage 1 baselines, both Stage 2 branches, and the Stage 3 frozen-classifier experiment. '
            'All accuracies are top-1 on complete official test splits.\n\n'
            'Stage 1-2 values are parsed from executed notebook tables. Stage 3 values are parsed from '
-           'the locked revision-2 record in doc/RESULTS.md; revision 3 is clearly marked as pending.')
+           'the measured revision-3 record in doc/RESULTS.md.')
 
     p.callout(0.50, 0.435, 0.445, 0.30, 'The headline result, stated honestly',
               f'The FM layer improves on the prototype baseline it replaces in {improved} of {total} '
@@ -716,7 +764,7 @@ def page_protocol(pdf, d, n):
     p.callout(0.545, 0.520, 0.400, 0.195, 'Two reporting caveats we hold to',
               'Flowers-102 at K = 10 has std = 0 by construction: the official train split is exactly '
               '10 images per class, so all three subset seeds pick the same images. That is one '
-              'effective run, and it is why 9 of the 48 CI-significant cells on page 8 are degenerate.\n'
+              'effective run, and it is why 8 of the 48 CI-significant cells on page 8 are degenerate.\n'
               'The Stage 1 image-prototype full setting is a single closed-form run, so it carries no '
               'error bar and the full-data deltas are unpaired.', accent=AMBER, size=9.0)
 
@@ -1039,22 +1087,23 @@ def page_clip(pdf, d, n):
     p.image(nb_image(NB5, 'accuracy_vs_training_size.png'), 0.075, 0.735, 0.86, 0.395)
 
     zs, ctl, tot, best = d.clip_counts
-    p.callout(0.055, 0.315, 0.43, 0.185, 'Against zero-shot: large gains',
+    p.callout(0.055, 0.315, 0.43, 0.155, 'Against zero-shot: large gains',
               f'FM beats the zero-shot baseline in {zs} of {tot} cells, by as much as '
-              f'+{best * 100:.1f} points on DTD at full data.\n\n'
-              f'Taken alone this looks like a decisive win for the FM layer. It is not — the FM side '
-              f'used K labelled images per class and the zero-shot side used none.', accent=BLUE)
-    p.callout(0.515, 0.315, 0.43, 0.185, 'Against the fair control: it mostly loses',
+              f'+{best * 100:.1f} points on DTD at full data. But FM used K labelled images per class '
+              f'and the zero-shot baseline used none, so this is not a like-for-like win.',
+              accent=BLUE, size=8.8)
+    clip_ci = d.clip_paired_counts
+    clip_t = d.clip_tstar_counts
+    p.callout(0.515, 0.315, 0.43, 0.155, 'Against the fair control: it mostly loses',
               f'Given the same labels, simply building image prototypes beats transporting toward text '
-              f'prototypes in {ctl} of {tot} cells. Only DTD at K = 10 and K = full come out ahead.\n\n'
-              f'On DTD at K = 5 the FM layer is even worse than zero-shot itself. The large Δ vs '
-              f'zero-shot measures the labels, not the layer.', accent=RED)
-    p.note(0.055, 0.118, 0.89,
+              f'prototypes in {clip_ci["control"]} paired cells; FM wins {clip_ci["fm"]}, and '
+              f'{clip_ci["unresolved"]} are unresolved. At DTD K=5, FM is even below zero-shot.',
+              accent=RED, size=8.8)
+    p.note(0.055, 0.132, 0.89,
            'This branch is an extension, never merged into the required Stage 2 table: ref/stage_1.pdf '
-           'asks for one prototype branch and the image branch is it. Note also what this branch does '
-           'not yet have — no paired CI or McNemar, and no validation-selected t*. Given how much the '
-           'paired CI changed the reading of the image branch, "loses to the control in 28 of 36 cells" '
-           'is still a difference of means.', size=8.8, color=FAINT)
+           f'asks for one prototype branch and the image branch is it. Validation-selected t* helps '
+           f'{clip_t[0]}/{clip_t[1]} conditions (mean {clip_t[2]:+.4f}), but never turns a '
+           'control-relative loss into a win.', size=8.2, color=FAINT)
     p.close()
 
 
@@ -1465,10 +1514,10 @@ def page_scope(pdf, d, n):
     lims = [
         ('n = 3 runs per setting.',
          'The paired 95% intervals on page 8 are wide because of it, and that is the honest reading: '
-         '33 of 72 cells cannot be called either way.'),
+         '24 of 72 cells cannot be called either way.'),
         ('Flowers-102 at K = 10 is one effective run.',
          'The official train split is exactly 10 images per class, so all three subset seeds select the '
-         'same images. Its std is 0 by construction, which also makes 9 of the 48 CI-significant cells '
+         'same images. Its std is 0 by construction, which also makes 8 of the 48 CI-significant cells '
          'degenerate.'),
         ('The Stage 1 full prototype baseline is a single run.',
          'It is closed-form, so it carries no error bar and the full-data deltas are unpaired.'),
@@ -1478,9 +1527,9 @@ def page_scope(pdf, d, n):
         ('2-D projections are qualitative.',
          'The joint PCA plane explains only part of the variance; geometry off-plane is invisible. They '
          'are not evidence of classifier quality.'),
-        ('The CLIP branch has no paired CI and no t* selection.',
-         'Its "loses to the control in 28 of 36 cells" is still a difference of means, and it is the '
-         'branch where early stopping would be worth the most.'),
+        ('The CLIP branch is supervised after the zero-shot baseline.',
+         'Its FM network uses labelled K-shot pairs. The same-supervision prototype control, not '
+         'zero-shot accuracy, is therefore the fair comparison.'),
         ('One reporting column is unpopulated.',
          'test_accuracy_sel_T needs one pass with FORCE_RETRAIN_STANDARD = True. The headline '
          'test_accuracy column is unaffected.'),
@@ -1500,9 +1549,9 @@ def page_scope(pdf, d, n):
          'over a plain MLP. A residual stack with a t input and nothing else added would say precisely '
          'what flow matching contributes beyond that. This is now the most informative single '
          'experiment left.'),
-        ('Carry the paired CI and t* selection to the CLIP branch.',
-         'The image branch\'s headline changed materially once both were computed. Until they are run on '
-         'the CLIP branch, its conclusions rest on differences of means.'),
+        ('Run the extended-repetition supplement.',
+         'The n=3 tables leave 24 image-branch cells unresolved. The gated n=10 supplement would narrow '
+         'the run-level intervals without changing the required three-seed result.'),
         ('Make the stopping time a hyperparameter everywhere.',
          'It is selectable on validation data at no cost, and it converted the project\'s worst cell '
          'from −.021 to +.010.'),
@@ -1566,7 +1615,7 @@ def page_stage3_protocol(pdf, d, n):
 
 def page_stage3_results(pdf, d, n):
     s3 = d.stage3
-    p = Page(pdf, n, 'stage 3 - measured revision 2')
+    p = Page(pdf, n, 'stage 3 - measured revision 3')
     p.title('The frozen-classifier comparison')
     p.lead('Top-1 test accuracy on the complete official split, averaged over the paired Stage 1 '
            'subset seeds 0, 1, and 2. Every delta uses the exact frozen probe loaded for that seed.')
@@ -1605,12 +1654,12 @@ def page_stage3_results(pdf, d, n):
     ax2.legend(fontsize=7, frameon=False, loc='lower right')
 
     p.callout(0.055, 0.245, 0.425, 0.135, 'Aircraft - the clearest gain',
-              'End-to-end adds 1.91 points and guided FM adds 1.63. Every Aircraft seed improves under '
+              'End-to-end adds 2.11 points and guided FM adds 2.12. Every Aircraft seed improves under '
               'both strategies, with paired bootstrap intervals excluding zero and significant exact '
               'McNemar tests.', accent=GREEN, size=8.8)
     p.callout(0.520, 0.245, 0.425, 0.135, 'Selective, not universal',
-              'Guided FM adds 0.71 points on DTD; end-to-end keeps identity. Flowers-102 stays at '
-              '99.35%, a useful ceiling control. No required revision-2 run regresses on test.',
+              'Guided FM adds 0.66 points on DTD; regularized end-to-end averages -0.23 points. '
+              'Flowers-102 stays at 99.35%, a useful ceiling control.',
               accent=AMBER, size=8.8)
     p.close()
 
@@ -1627,29 +1676,29 @@ def page_stage3_behavior(pdf, d, n):
                    f"{r['net']:.1f}", f"{r['churn']:.1f}"] for r in s3.churn]
     p.table(0.055, 0.745, ['dataset / strategy', 'fixed', 'broken', 'net', 'churn'], churn_rows,
             [0.220, 0.065, 0.065, 0.065, 0.075], row_h=0.037, size=8.7, bold_first=True)
-    p.callout(0.575, 0.745, 0.370, 0.170, 'Nine of eighteen keep identity',
-              'All three DTD end-to-end runs and all six Flowers runs select epoch 0. Because epoch 0 '
+    p.callout(0.575, 0.745, 0.370, 0.170, 'Eight of eighteen keep identity',
+              'Two DTD end-to-end runs and all six Flowers runs select epoch 0. Because epoch 0 '
               'is the exact linear probe, validation cannot force a harmful transformation. Only test '
               'delta is informative.', accent=MUTED, size=8.7)
 
     p.callout(0.055, 0.505, 0.425, 0.175, 'Power versus restraint',
-              'Aircraft end-to-end moves features by a mean relative distance of .894 and changes '
-              '463.7 predictions. Guided FM moves .082 and changes 153.7, yet retains most of the '
-              'accuracy gain. DTD guided moves only .061.', accent=BLUE, size=8.8)
+              'On seed 0, Aircraft end-to-end moves features by a relative distance of .058 and changes '
+              '181 predictions on average; guided FM moves .063 and changes 177.3. Both gains are '
+              'dominated by sample-dependent transport rather than a common shift.', accent=BLUE, size=8.8)
     p.callout(0.520, 0.505, 0.425, 0.175, 'Paired evidence',
-              'End-to-end has 3 positive, 0 negative, and 6 identity cells; all 3 positives are '
-              'significant. Guided has 6 positive, 0 negative, and 3 identity cells; 5 of 6 positives '
-              'are significant. DTD seed 1 is the lone borderline case.', accent=GREEN, size=8.8)
+              'End-to-end has 3 positive, 1 negative, and 5 tied cells; all 3 positives are significant. '
+              'Guided has 6 positive and 3 tied cells; 5 of 6 positives are significant. The negative '
+              'DTD end-to-end cell is not significant.', accent=GREEN, size=8.8)
 
-    p.callout(0.055, 0.285, 0.425, 0.165, 'Regularization points to revision 3',
-              'On Aircraft seed 0, lambda-displacement = 1 raises .5518 to .5563 while reducing '
-              'relative motion from .906 to .058. On DTD, lambda = 10 produces a smaller +.0059 gain. '
-              'These are single-seed ablations, not replacements for the main table.', accent=PURPLE,
+    p.callout(0.055, 0.285, 0.425, 0.165, 'Regularization controls movement',
+              'On Aircraft seed 0, lambda-displacement = 1 raises .5530 to .5563 while reducing '
+              'relative motion from .727 to .058. On DTD, lambda = 10 produces a +.0059 gain. '
+              'These remain single-seed ablations.', accent=PURPLE,
               size=8.6)
-    p.callout(0.520, 0.285, 0.425, 0.165, 'The endpoint can overshoot',
-              'Validation-selected flow time helps only Aircraft end-to-end: .5476 at t = 1 becomes '
-              '.5513 at mean t-star = .694. Guided Aircraft selects the full endpoint. The lesson is '
-              'specific rather than universal: aggressive rollout benefits from earlier stopping.',
+    p.callout(0.520, 0.285, 0.425, 0.165, 'Earlier stopping does not help revision 3',
+              'Validation-selected t-star improves 0 of 6 aggregate conditions (mean -0.0002). '
+              'Aircraft selects the full endpoint; DTD guided loses .0012 when stopped early. '
+              'The endpoint ablation is now a negative result.',
               accent=AMBER, size=8.6)
     p.close()
 
@@ -1670,21 +1719,19 @@ def page_stage3_joint(pdf, d, n):
             bold_first=True, align=['left', 'right', 'right', 'right', 'right', 'left'])
 
     p.callout(0.055, 0.475, 0.425, 0.165, 'What the optional extension shows',
-              'Aircraft end-to-end and DTD guided gains remain almost entirely attributable to the FM. '
-              'Aircraft guided benefits from both components: the full joint model reaches .5487, '
-              'above either FM-only (.5396) or head-only (.5331).', accent=GREEN, size=8.7)
+              'Aircraft end-to-end and guided gains remain primarily attributable to the FM. The full '
+              'joint models reach .5502 and .5520; their FM-only legs reach .5445 and .5491, while the '
+              'head-only legs reach .5344 and .5281. DTD guided is also FM-led.', accent=GREEN, size=8.7)
     p.callout(0.520, 0.475, 0.425, 0.165, 'Variants implemented',
               'Classifier learning rates at .01x, .1x, and 1x the FM rate; unfreezing at epochs 1, 10, '
               'and 30; and anchoring penalties on the distance from the original Stage 1 weights. '
               'These remain optional and never replace the frozen-head table.', accent=BLUE, size=8.7)
 
-    p.callout(0.055, 0.255, 0.890, 0.145, 'Revision status - do not mix the two',
-              'The table in this chapter is implementation revision 2, measured on 2026-09-08 and '
-              'reproduced from cache on 2026-09-09. Revision 3 is code-complete but unmeasured: it uses '
-              'lambda-displacement = 1 for the main end-to-end run and independent per-sample guidance '
-              'radius, step, unit-gradient normalization, and trust-region projection. A fresh run must '
-              'train rather than load revision-2 caches before its results can replace these numbers.',
-              accent=RED, size=8.8)
+    p.callout(0.055, 0.255, 0.890, 0.145, 'Revision 3 execution status',
+              'Revision 3 was executed end-to-end on 2026-09-14: all 40 code cells completed, the full '
+              'main grid retrained under the revision-3 configuration, and 18 tables plus 17 figures '
+              'were written. The older revision-2 results remain historical context only.',
+              accent=GREEN, size=8.8)
     p.close()
 
 
@@ -1699,8 +1746,40 @@ PAGES = [
 ]
 
 
+def export_readme_figures():
+    """Export the executed notebook plots used as evidence in README.md."""
+    README_FIGURES.mkdir(parents=True, exist_ok=True)
+    for notebook, needle, which, filename in [
+        (NB1, 'accuracy_vs_training_size.png', 0, 'stage1_accuracy.png'),
+        (NB2, 'accuracy_vs_training_size.png', 0, 'stage1_prototype_accuracy.png'),
+        (NB2, 26, 0, 'stage1_prototype_tsne.png'),
+        (NB3, 'accuracy.png', 0, 'stage1_clip_accuracy.png'),
+        (NB3, 21, 0, 'stage1_clip_tsne.png'),
+        (NB4, 'accuracy_vs_training_size.png', 0, 'stage2_accuracy.png'),
+        (NB4, 'feature_space_comparison_tsne.png', 0, 'stage2_tsne.png'),
+        (NB4, 'accuracy_vs_flow_time.png', 0, 'stage2_flow_time.png'),
+        (NB4, 'inference_step_ablation.png', 0, 'stage2_step_ablation.png'),
+        (NB4, 'fm_vs_linear_probe_context.png', 0, 'stage2_vs_linear_probe.png'),
+        (NB5, 'accuracy_vs_training_size.png', 0, 'stage2_clip_accuracy.png'),
+        (NB5, 30, 0, 'stage2_clip_tsne.png'),
+        (NB6, 24, 0, 'stage3_accuracy_and_delta.png'),
+        (NB6, 30, 0, 'stage3_tsne.png'),
+        (NB6, 34, 0, 'stage3_regularization.png'),
+        (NB6, 36, 0, 'stage3_guidance.png'),
+        (NB6, 42, 0, 'stage3_joint_finetune.png'),
+        (NB6, 56, 0, 'stage3_transport_attribution.png'),
+        (NB6, 62, 0, 'stage3_effect_sizes.png'),
+    ]:
+        plt.imsave(README_FIGURES / filename, nb_image(notebook, needle, which))
+    README_MEDIA.mkdir(parents=True, exist_ok=True)
+    (README_MEDIA / 'flow_animation_aircraft_dinov2_vits14_ex2.gif').write_bytes(
+        nb_gif(NB4, 56, 2))
+    (README_MEDIA / 'flow_population_aircraft.mp4').write_bytes(nb_video(NB6, 66))
+
+
 def main():
     data = Data()
+    export_readme_figures()
     with PdfPages(OUT) as pdf:
         for i, fn in enumerate(PAGES, 1):
             fn(pdf, data, i)

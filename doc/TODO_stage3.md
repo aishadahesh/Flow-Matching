@@ -2,13 +2,9 @@
 
 Source of truth: `ref/part_3.pdf`. Stage 3 inserts an FM transformation between the **frozen** image-encoder feature and the **frozen** Stage 1 linear probe: `z -> FM -> z_hat -> (W z_hat + b) -> s`. **Do not retrain the linear classifier for the required experiments, do not recompute Stage 1 features, and do not change the Stage 1 splits, subset seeds, or K.** The direct baseline is the Stage 1 linear probe on the same dataset, encoder, subset and seed - any deviation makes `ΔAcc` uninterpretable, exactly as in Stage 2.
 
-Status (2026-09-09): **implementation revision 2 completed on Colab on 2026-09-08 and its results are transcribed; revision 3 is code-complete and awaiting a fresh run.** Revision 3 preserves the required Stage 3 comparison while separating the guided radius, step fraction, gradient normalization, and constraint; it implements the documented per-sample radius, corrects the trust-region diagnostics, and promotes the specification-permitted λ=1 displacement penalty to the end-to-end main run while retaining λ=0 as a control. Its configuration revision invalidates the affected caches automatically.
+Status (2026-09-14): **implementation revision 3 completed end to end and its results are transcribed.** All 40 code cells executed; the full main grid retrained under configuration/implementation revision 3, the guards passed, and 18 tables plus 17 figures were written. Revision 3 separates guided radius, step fraction, gradient normalization, and projection; corrects the trust-region diagnostics; and uses the specification-permitted `lambda_disp=1` in the end-to-end main run while retaining `lambda=0` as a control.
 
-The notebook replay saved on 2026-09-09 still declared revision 2 and loaded all existing revision-2
-main-grid caches. It reproduced the locked result table but did not close the revision-3 run item;
-the revision-3 source has been restored and the mismatched outputs removed.
-
-**Remaining provenance discrepancy:** the current K=10 DINOv2 artifacts give DTD .7167, Aircraft .5285, Flowers-102 .9935, while the older Stage 1 aggregate table records .7181, .5096, .9932. Revision 2 passed validation and test replay within 1e-6 and bound every result to content signatures of the exact probe and feature caches, so the new paired Stage 3 deltas are valid. The older Stage 1 aggregate row still needs its artifact provenance reconciled.
+**Remaining provenance discrepancy:** the current K=10 DINOv2 artifacts give DTD .7167, Aircraft .5285, Flowers-102 .9935, while the older Stage 1 aggregate table records .7181, .5096, .9932. Revision 3 passed validation and test replay within 1e-6 and bound every result to content signatures of the exact probe and feature caches, so the new paired Stage 3 deltas are valid. The older Stage 1 aggregate row still needs its artifact provenance reconciled.
 
 ## 0. Lock the Stage 3 experimental plan
 
@@ -196,8 +192,8 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   .92 and there was nothing to demonstrate. The second was training the toy probe without validation
   selection, which on a problem with no linear signal landed it *below* chance at .276 and inflated
   the flow's apparent gain; it now uses Stage 1's rule and sits at .458, where a line belongs.
-- [x] Report the three-way toy result rather than a flattering two-way one. Revision 2 measured:
-  probe .4583, end-to-end .9948 (+.5365), classifier-guided at both the default step and step 0.5
+- [x] Report the three-way toy result rather than a flattering two-way one. Revision 3 measured:
+  probe .4583, unregularized end-to-end .9740 (+.5156), classifier-guided at both the default radius and radius 0.2
   .4583 (+.0000), with both guided runs selecting epoch 0. The earlier step-0.5 guided gain belonged
   to revision 1's current-endpoint anchoring; it does not survive the source-anchored trust region.
 - [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
@@ -288,8 +284,8 @@ small `ΔAcc` actually needs. All were added after the first Colab run.
   .92 and there was nothing to demonstrate. The second was training the toy probe without validation
   selection, which on a problem with no linear signal landed it *below* chance at .276 and inflated
   the flow's apparent gain; it now uses Stage 1's rule and sits at .458, where a line belongs.
-- [x] Report the three-way toy result rather than a flattering two-way one. Revision 2 measured:
-  probe .4583, end-to-end .9948 (+.5365), classifier-guided at both the default step and step 0.5
+- [x] Report the three-way toy result rather than a flattering two-way one. Revision 3 measured:
+  probe .4583, unregularized end-to-end .9740 (+.5156), classifier-guided at both the default radius and radius 0.2
   .4583 (+.0000), with both guided runs selecting epoch 0. The earlier step-0.5 guided gain belonged
   to revision 1's current-endpoint anchoring; it does not survive the source-anchored trust region.
 - [x] **Inline report** (Section 25). Reloads every saved CSV and PNG from Drive and renders them in
@@ -364,7 +360,7 @@ Three defects were found and fixed this way rather than on Colab: the missing ep
 ## Open items
 
 - [x] Run implementation revision 2 end to end on Colab over the real Stage 1 caches.
-- [ ] Run implementation revision 3 from the top on Colab. The configuration and implementation revision are both 3, and the end-to-end default is now regularized, so the complete main grid, sweeps, joint extension, toy, and dependent analyses must regenerate before any revision-3 result is reported.
+- [x] Run implementation revision 3 from the top. Completed 2026-09-14: all 40 code cells executed, the main grid retrained rather than loading revision-2 caches, and the sweeps, joint extension, toy, diagnostics, tables, figures, and animations regenerated.
 - [ ] **Reconcile the older Stage 1 aggregate table with the current signed artifacts.** This does not invalidate Stage 3's paired deltas: the run replayed the exact loaded heads within 1e-6.
 - [x] Transcribe the required results, epoch-0 count, and paired-significance summary into `doc/RESULTS.md`.
 - [x] Report both variant sweeps with displacement and trust-region binding diagnostics.

@@ -112,12 +112,12 @@ Complete this section for the comprehensive grid.
 - [x] Report 5-shot and 10-shot results as mean +/- standard deviation over the three subset-seed runs.
 - [x] Report full linear-probe results as mean +/- standard deviation over three initialization seeds.
 - [x] Report full image-prototype or zero-shot CLIP results as a single run, as applicable.
-- [ ] Produce an accuracy table covering every implemented dataset, encoder, baseline, and training-set size. (each notebook produces its own per-baseline table; there is no single cross-baseline table yet - `README.md` already names a `04_combined_results.ipynb` for this, but that notebook does not exist in the repo)
+- [x] Produce an accuracy table covering every implemented dataset, encoder, baseline, and training-set size. (`doc/RESULTS.md` and `README.md` consolidate the linear-probe, image-prototype, and zero-shot CLIP results; no extra notebook is required.)
 - [ ] Sanity-check run counts and aggregation axes before reporting. (no explicit assertion on expected row/run counts before reporting summaries)
 
 ## 7. Required figures and analysis
 
-- [ ] Accuracy versus training-set size:
+- [x] Accuracy versus training-set size:
   - [x] Show 5-shot, 10-shot, and full results.
   - [x] Include error bars where three runs exist.
   - [ ] If using zero-shot CLIP, optionally show it as a horizontal reference line. (optional; not currently plotted anywhere)
@@ -141,10 +141,10 @@ Complete this section for the comprehensive grid.
 - [ ] Re-run a representative experiment from cached features using only the recorded configuration. (not yet exercised as an explicit check - and see the note above about `01_linear_probe.ipynb` reverting mid-session, which is exactly the kind of drift this step would catch)
 - [x] Verify that encoders never received gradient updates. (hard `assert` in every notebook's `load_encoder`)
 - [ ] Verify that all reported numbers trace to saved run-level metrics. (every number is traceable via `metrics.json`/`run_metrics.csv`, but no explicit audit step re-derives the summary tables from those files to confirm it)
-- [ ] Document the complete experimental protocol, deviations, and main observations. (`DOC.md` documents the protocol and the scope deviations thoroughly; it does not yet contain results/observations - that discussion still needs to be written)
+- [x] Document the complete experimental protocol, deviations, and main observations. (`doc/DOC.md` records the protocol and deviations; `doc/RESULTS.md`, `README.md`, and `doc/Report.pdf` record the findings and limitations.)
 - [x] Preserve the selected prototype setup and artifacts for Stage 2. (`prototypes.pt`/checkpoints per run)
 - [x] Preserve the linear-probe setup and artifacts for Stage 3. (`best_linear_head.pt`, `config.json`, `metrics.json` per run)
-- [ ] Prepare to explain the protocol, results, failure modes, and quantitative/qualitative observations. (protocol: yes, via `DOC.md`; results/failure-mode/observation write-up: not yet done)
+- [x] Prepare to explain the protocol, results, failure modes, and quantitative/qualitative observations. (Consolidated in `README.md`, `doc/RESULTS.md`, and `doc/Report.pdf`.)
 
 ## Completion criteria
 

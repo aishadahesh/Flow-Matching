@@ -6,12 +6,12 @@ Every clause of `ref/part_3.pdf` mapped to where it is implemented, plus an expl
 
 The deliverable is **`06_fm_before_classifier.ipynb`**. Section numbers below refer to that notebook.
 
-**Review status (2026-09-09): implementation revision 2 is measured; revision 3 is code-complete and
-awaiting a fresh run.** Revision 3 changes only details the specification explicitly invites varying:
-Strategy 1 displacement regularization and Strategy 2 step size, normalization, and constraint. The frozen classifier, required methods, datasets,
-encoder, K, T, splits, subsets, and reporting contract are unchanged.
-The 2026-09-09 replay used revision-2 source and loaded revision-2 caches; it reproduced the locked
-table but does not count as the pending revision-3 run.
+**Review status (2026-09-14): implementation revision 3 is measured.** All 40 code cells executed,
+the main grid retrained under revision 3, and the complete set of sweeps, controls, tables, figures,
+and animations regenerated. Revision 3 changes only details the specification explicitly invites
+varying: Strategy 1 displacement regularization and Strategy 2 step size, normalization, and
+constraint. The frozen classifier, required methods, datasets, encoder, K, T, splits, subsets, and
+reporting contract are unchanged.
 
 ---
 
@@ -113,5 +113,5 @@ Everything below is diagnostic or exploratory. None of it changes the required t
 - **Runs that kept the identity must be counted, not averaged away.** §10 prints how many of the 18 selected epoch 0.
 - **Flowers-102 at K=10 has one effective subset**, since the official train split is exactly 10 images per class; its `std = .0000` is by construction.
 - **The trust-region radius is chosen, not fitted.** §15 reports the hit rate; if it is near 1.0 the radius binds for essentially every sample and the Strategy 2 result depends materially on that number.
-- **Freezing the classifier does not freeze the model's capacity.** `W F_θ(z) + b` can represent a nonlinear decision boundary even with `W, b` fixed, because the FM warps the feature space. §23c demonstrates this directly: on concentric rings, which no line can separate, the frozen linear probe sits at .4583 and the same probe behind end-to-end FM reaches .9948. Conclusions are therefore about this FM architecture at this operating point, not about "what a frozen linear classifier can do".
-- **The current Stage 1 artifacts disagree with the older aggregate table** (most visibly Aircraft .5285 vs .5096). Revision 2 content-signed the exact probe and feature caches and passed validation/test replay within 1e-6, so its paired deltas are valid; do not place the two aggregate tables side by side as though they came from the same artifact set.
+- **Freezing the classifier does not freeze the model's capacity.** `W F_θ(z) + b` can represent a nonlinear decision boundary even with `W, b` fixed, because the FM warps the feature space. §23c demonstrates this directly: on concentric rings, which no line can separate, the frozen linear probe sits at .4583 and the same probe behind unregularized end-to-end FM reaches .9740. Conclusions are therefore about this FM architecture at this operating point, not about "what a frozen linear classifier can do".
+- **The current Stage 1 artifacts disagree with the older aggregate table** (most visibly Aircraft .5285 vs .5096). Revision 3 content-signed the exact probe and feature caches and passed validation/test replay within 1e-6, so its paired deltas are valid; do not place the two aggregate tables side by side as though they came from the same artifact set.

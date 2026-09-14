@@ -2,7 +2,7 @@
 
 This document covers the protocol for all three stages. **Part I** is Stage 1: classification baselines on frozen pretrained encoders, with no Flow Matching component. **Part II** is Stage 2: the Flow Matching layer added on top of the selected prototype baseline. **Part III** is Stage 3: a Flow Matching transformation inserted *before* the frozen Stage 1 linear classifier.
 
-All three stages are measured. Stage 3 implementation revision 2 completed on the real feature caches on 2026-09-08; its results and controls are reported in `RESULTS.md`. A 2026-09-09 replay loaded those same revision-2 caches and reproduced the published table. Revision 3 improves the classifier-guided target parameterization and is awaiting a fresh run, so neither replay replaces those measurements yet.
+All three stages are measured. Stage 3 implementation revision 3 completed end to end on the real feature caches on 2026-09-14; all 40 code cells executed, the full grid retrained under revision 3, and its results and controls are reported in `RESULTS.md`.
 
 Measured results and their discussion are in `RESULTS.md`. Per-stage task tracking is in `TODO_stage1.md`, `TODO_stage2.md` and `TODO_stage3.md`.
 
@@ -691,8 +691,8 @@ pretrained classifier this stage is supposed to be improving *on*.
 
 **A two-dimensional simulation** sits alongside the diagnostics. Two concentric rings run through
 the same training functions, so the frozen decision regions and learned velocity field can be drawn
-directly rather than projected. The revision-2 result is diagnostic: end-to-end transforms the .4583
-linear probe into .9948 accuracy, while both guided settings select the identity checkpoint. A larger
+directly rather than projected. The revision-3 result is diagnostic: unregularized end-to-end transforms the .4583
+linear probe into .9740 accuracy, while both guided settings select the identity checkpoint. A larger
 guided step no longer solves the toy once the trust region is correctly anchored at the source; the
 earlier positive guided result depended on revision 1's cumulative-drift semantics.
 
