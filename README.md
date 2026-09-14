@@ -377,15 +377,6 @@ The corresponding joint t-SNE views cover DTD, Aircraft, and Flowers-102. They s
 - Reverse flow provides quantitative evidence of the CLIP modality gap. Text-prototype recovery rises from .55/.25/.75 to 1.00/.75/1.00 for DTD/Aircraft/Flowers, and the reverse-flowed prototypes land close to their matching image centroids.
 - Joint PCA/t-SNE, intermediate-time snapshots, reverse-flow strips, trajectories, and animations were produced for this branch as well.
 
-### Stage 2 experiments implemented but not executed
-
-These are not part of the reported results:
-
-| Gated experiment | Status | Why it remains separate |
-|---|---|---|
-| Zero-output initialization pilot for Stage 2 | Implemented, not run | Would require about 72 additional networks and would replace all headline values only if adopted |
-| Extended repetitions with seeds 0-9 | Implemented, not run | Supplemental power analysis; the required protocol remains three repetitions |
-| Per-T checkpoint-selection columns | Code implemented; existing standard runs were loaded rather than retrained | `test_accuracy_sel_T` requires one `FORCE_RETRAIN_STANDARD=True` pass; headline `test_accuracy` is unaffected |
 
 ## Stage 3 - Flow Matching before a frozen linear classifier
 
@@ -569,15 +560,6 @@ The displacement decomposition rules out a trivial global-shift explanation for 
 - Joint fine-tuning does not explain away the result. The FM-only leg retains most of the useful Aircraft and DTD-guided gains.
 - The guided trust region binds for the default configuration, so its radius is a substantive modeling assumption rather than an inactive safeguard.
 - Freezing the classifier does not make the complete model linear. The nonlinear FM can warp feature space before the fixed affine boundary, as the rings simulation demonstrates.
-
-## Cross-stage conclusions
-
-1. **Choose the representation first.** Moving from ResNet-18 to DINOv2 has a larger effect than changing the downstream classifier in almost every setting.
-2. **FM is most useful when the original decision rule is structurally weak.** Aircraft's negative prototype margin predicts the largest Stage 2 gains, and its weak K=10 probe leaves room for Stage 3 gains.
-3. **Always use a fair control.** The CLIP extension looks strong against zero-shot and weak against the same-supervision prototype control. The largest Stage 2 image-branch gain is mostly reproduced by a direct MLP.
-4. **Flow-specific value is robustness and iterative structure, not merely capacity.** FM is clearest where the direct MLP overfits, and the time-free residual control sits closer to FM than the one-shot direct MLP.
-5. **More Euler steps are not automatically better.** Two steps are enough for the median standard-FM gain, and validation-selected early stopping is useful only in overshooting cases.
-6. **Identity checkpointing makes null results interpretable.** In Stage 3, a selected epoch-0 model is explicitly counted as "FM learned nothing useful" rather than hidden inside an average.
 
 
 ## Repository structure

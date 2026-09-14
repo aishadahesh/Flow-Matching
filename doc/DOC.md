@@ -279,7 +279,6 @@ Stage 1 is done when:
 
 - `ref/intro to flow matching.pdf` - Flow Matching tutorial covering flows, velocity fields, conditional Flow Matching, couplings, geometric variants, rectification, adaptation, and discrete flows.
 - `ref/stage_1.pdf` - authoritative Stage 1 requirements and evaluation protocol.
-- `ref/stage_2.pdf` - authoritative Stage 2 requirements: standard vs. rolled-out FM training, inference, and required figures.
 - `ref/flow matching as a layer.pdf` - project roadmap connecting the Stage 1 baselines to FM last-layer and pre-classifier stages.
 - [A Visual Introduction to Rectified Flows](https://alechelbling.com/blog/rectified-flow/) - visual explanation of coupling-induced curvature and the reflow procedure.
 
