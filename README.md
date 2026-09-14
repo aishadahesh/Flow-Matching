@@ -155,6 +155,10 @@ The three plots below summarize the complete Stage 1 comparison: supervised line
 
 #### Stage 1 feature geometry - all datasets
 
+The saved outputs of the linear-probe notebook were accidentally cleared, so the notebook was rerun to restore them. Completed experiment results were loaded from the existing cache rather than retraining the full grid. Stage 3 was not rerun because restoring these Stage 1 display outputs did not change its already executed results. The recovered plots show the frozen feature geometry for every dataset and encoder: DINOv2 separates DTD and Flowers-102 much more clearly than ResNet-18, while Aircraft remains the most overlapped dataset.
+
+![Stage 1 PCA and t-SNE of frozen linear-probe features for every dataset and encoder](doc/figures/stage1_linear_tsne.png)
+
 The image-prototype panel covers DTD, Aircraft, and Flowers-102 with both ResNet-18 and DINOv2. Every row uses the same test examples in its PCA and t-SNE views, and the `X` markers are the matching class prototypes. DINOv2 produces much cleaner clusters on DTD and Flowers, while Aircraft retains substantial class overlap even with the stronger encoder; this visually matches the accuracy gap in the tables above.
 
 ![Stage 1 joint PCA and t-SNE of image features and prototypes for every dataset and encoder](doc/figures/stage1_prototype_tsne.png)

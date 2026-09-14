@@ -1751,6 +1751,7 @@ def export_readme_figures():
     README_FIGURES.mkdir(parents=True, exist_ok=True)
     for notebook, needle, which, filename in [
         (NB1, 'accuracy_vs_training_size.png', 0, 'stage1_accuracy.png'),
+        (NB1, 'feature_pca_tsne.png', 0, 'stage1_linear_tsne.png'),
         (NB2, 'accuracy_vs_training_size.png', 0, 'stage1_prototype_accuracy.png'),
         (NB2, 26, 0, 'stage1_prototype_tsne.png'),
         (NB3, 'accuracy.png', 0, 'stage1_clip_accuracy.png'),
